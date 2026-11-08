@@ -47,24 +47,27 @@
             const [logs, setLogs] = React.useState([]);
 
             const [searchTerm, setSearchTerm] = React.useState('');
-            const [selectedCategory, setSelectedCategory] = React.useState('Összes');
+            const [storageFilter, setStorageFilter] = React.useState('Összes'); // Első sor szűrő
+            const [selectedCategory, setSelectedCategory] = React.useState('Összes'); // Második sor szűrő
 
             // Új spájz tétel state
             const [newName, setNewName] = React.useState('');
             const [newCategory, setNewCategory] = React.useState('Alapanyag');
             const [customCategoryInput, setCustomCategoryInput] = React.useState('');
             
+            const [newStorage, setNewStorage] = React.useState('Kamra');
             const [newQty, setNewQty] = React.useState(1);
             const [newUnit, setNewUnit] = React.useState('db');
             const [customUnitInput, setCustomUnitInput] = React.useState('');
 
             const [newMin, setNewMin] = React.useState(1);
-            const [newExpiry, setNewExpiry] = React.useState('');
+            const [newExpiry, setNewExpiry] = React.useState(''); // Üresen hagyható
             const [newAutoShopping, setNewAutoShopping] = React.useState(true);
 
             // Szerkesztési state-ek
             const [editName, setEditName] = React.useState('');
             const [editCategory, setEditCategory] = React.useState('');
+            const [editStorage, setEditStorage] = React.useState('Kamra');
             const [editExpiry, setEditExpiry] = React.useState('');
             const [editMin, setEditMin] = React.useState(1);
             const [editUnit, setEditUnit] = React.useState('');
@@ -74,10 +77,24 @@
             const [customNote, setCustomNote] = React.useState('');
             const [showAddCustom, setShowAddCustom] = React.useState(false);
 
-            const [defaultCategories, setDefaultCategories] = React.useState(['Alapanyag', 'Folyadék', 'Hűtő', 'Fagyasztó', 'Egyéb']);
+            const [defaultCategories] = React.useState(['Alapanyag', 'Folyadék', 'Hűtő', 'Fagyasztó', 'Egyéb']);
             const defaultUnits = ['db', 'kg', 'dkg', 'liter', 'csomag'];
+            const storageLocations = ['Kamra', 'Hűtő', 'Mélyhűtő'];
 
             const allCategories = ['Összes', ...Array.from(new Set([...defaultCategories, ...items.map(i => i.category).filter(Boolean)]))];
+
+            const expiryGuide = [
+                { name: 'Tej (friss)', cycle: '3 - 7 nap (Hűtőben)' },
+                { name: 'Tej (tartós / UHT)', cycle: '3 - 6 hónap (Kamrában)' },
+                { name: 'Tojás', cycle: '3 - 5 hét (Hűtőben)' },
+                { name: 'Liszt, Cukor', cycle: '6 - 12+ hónap (Kamrában)' },
+                { name: 'Sajt', cycle: '2 - 4 hét (Hűtőben)' },
+                { name: 'Tejföl / Joghurt', cycle: '2 - 3 hét (Hűtőben)' },
+                { name: 'Kenyér', cycle: '4 - 7 nap (vagy fagyasztva hónapokig)' },
+                { name: 'Húsok (baromfi/sertés)', cycle: '1 - 5 nap (Hűtő) / 4-6 hónap (Mélyhűtő)' },
+                { name: 'Zöldségek / Gyümölcsök', cycle: '3 nap - 3 hét (Fajtától függően)' },
+                { name: 'Konzerv', cycle: '1 - 3 év (Kamrában)' }
+            ];
 
             React.useEffect(() => {
                 const unsubscribeItems = db.collection('spajz_items').onSnapshot(snapshot => {
@@ -102,28 +119,6 @@
                 };
             }, []);
 
-            const handleNameChange = (val) => {
-                setNewName(val);
-                const lower = val.toLowerCase();
-                const today = new Date();
-
-                let daysToAdd = null;
-                if (lower.includes('tej') || lower.includes('tartós tej')) {
-                    daysToAdd = 7;
-                } else if (lower.includes('hús') || lower.includes('csirke') || lower.includes('darálthús')) {
-                    daysToAdd = 2;
-                } else if (lower.includes('kenyér') || lower.includes('péksüti')) {
-                    daysToAdd = 4;
-                } else if (lower.includes('tojás')) {
-                    daysToAdd = 21;
-                }
-
-                if (daysToAdd !== null) {
-                    today.setDate(today.getDate() + daysToAdd);
-                    setNewExpiry(today.toISOString().split('T')[0]);
-                }
-            };
-
             const handleAddItem = async (e) => {
                 e.preventDefault();
                 if (!newName.trim()) return;
@@ -135,17 +130,18 @@
                 const newItem = {
                     name: newName,
                     category: finalCategory,
+                    storage: newStorage,
                     qty: Number(newQty),
                     unit: finalUnit,
                     min: Number(newMin),
                     autoShopping: newAutoShopping,
                     addedDate: today,
-                    expiryDate: newExpiry
+                    expiryDate: newExpiry // Ha üres, üres marad
                 };
 
                 await db.collection('spajz_items').add(newItem);
                 await db.collection('spajz_logs').add({ 
-                    text: `Hozzáadva a spájzhoz: ${newName} (${newItem.qty} ${newItem.unit})`, 
+                    text: `Hozzáadva [${newStorage}]: ${newName} (${newItem.qty} ${newItem.unit})`, 
                     date: new Date().toLocaleDateString(), 
                     timestamp: Date.now() 
                 });
@@ -161,6 +157,7 @@
                 setEditingItemId(item.id);
                 setEditName(item.name || '');
                 setEditCategory(item.category || 'Alapanyag');
+                setEditStorage(item.storage || 'Kamra');
                 setEditExpiry(item.expiryDate || '');
                 setEditMin(item.min || 1);
                 setEditUnit(item.unit || 'db');
@@ -171,6 +168,7 @@
                 await db.collection('spajz_items').doc(id).update({
                     name: editName,
                     category: editCategory,
+                    storage: editStorage,
                     expiryDate: editExpiry,
                     min: Number(editMin),
                     unit: editUnit
@@ -246,7 +244,7 @@
                         {/* SPÁJZ NÉZET */}
                         {activeTab === 'inventory' && (
                             <div>
-                                <div className="mb-3 flex gap-2">
+                                <div className="mb-2.5 flex gap-2">
                                     <input 
                                         type="text" 
                                         placeholder="Keresés a spájzban..." 
@@ -256,16 +254,33 @@
                                     />
                                 </div>
 
-                                <div className="flex gap-1.5 overflow-x-auto pb-2 mb-3">
-                                    {allCategories.map(cat => (
-                                        <button
-                                            key={cat}
-                                            onClick={() => setSelectedCategory(cat)}
-                                            className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${selectedCategory === cat ? 'bg-emerald-600 text-white' : 'bg-gray-200 text-gray-700'}`}
-                                        >
-                                            {cat}
-                                        </button>
-                                    ))}
+                                {/* Két soros szűrőrendszer */}
+                                <div className="space-y-1.5 mb-3">
+                                    {/* 1. Sor: Összes és Tárolóhelyek */}
+                                    <div className="flex gap-1.5">
+                                        {['Összes', ...storageLocations].map(loc => (
+                                            <button
+                                                key={loc}
+                                                onClick={() => setStorageFilter(loc)}
+                                                className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${storageFilter === loc ? 'bg-emerald-700 text-white shadow-sm' : 'bg-gray-200 text-gray-700'}`}
+                                            >
+                                                {loc === 'Összes' ? '📦 Összes' : (loc === 'Kamra' ? '🏠 Kamra' : (loc === 'Hűtő' ? '❄️ Hűtő' : '🧊 Mélyhűtő'))}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* 2. Sor: Kategóriák */}
+                                    <div className="flex gap-1.5 overflow-x-auto pb-1">
+                                        {allCategories.map(cat => (
+                                            <button
+                                                key={cat}
+                                                onClick={() => setSelectedCategory(cat)}
+                                                className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${selectedCategory === cat ? 'bg-emerald-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600'}`}
+                                            >
+                                                {cat}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
 
                                 <div className="space-y-2.5">
@@ -276,15 +291,16 @@
                                         </div>
                                     ) : (
                                         items
+                                            .filter(i => storageFilter === 'Összes' || i.storage === storageFilter)
                                             .filter(i => selectedCategory === 'Összes' || i.category === selectedCategory)
                                             .filter(i => i.name && i.name.toLowerCase().includes(searchTerm.toLowerCase()))
                                             .map(item => {
                                                 const isExpanded = expandedItemId === item.id;
                                                 const isEditing = editingItemId === item.id;
-                                                const isExpired = item.expiryDate && item.expiryDate < todayStr;
+                                                // Csak akkor jelöljük lejártnak, ha van megadott lejárati dátum ÉS az kisebb, mint a mai nap
+                                                const isExpired = item.expiryDate && item.expiryDate.trim() !== '' && item.expiryDate < todayStr;
                                                 const isOutOfStock = item.qty <= 0;
                                                 
-                                                // Háttérszín meghatározása: ha lejárt, piros; ha elfogyott, sárga/borostyán; különben fehér
                                                 let cardBgClass = "bg-white border-gray-100";
                                                 if (isExpired) {
                                                     cardBgClass = "bg-red-50 border-red-200";
@@ -297,7 +313,7 @@
                                                         
                                                         {/* SZERKESZTŐ NÉZET */}
                                                         {isEditing ? (
-                                                            <div className="space-y-3 bg-white/80 p-2.5 rounded-lg border border-amber-200">
+                                                            <div className="space-y-3 bg-white/90 p-2.5 rounded-lg border border-amber-200">
                                                                 <h4 className="text-xs font-bold text-amber-900">✏️ Tétel szerkesztése</h4>
                                                                 <div>
                                                                     <label className="text-[10px] text-gray-500 block">Név</label>
@@ -305,8 +321,10 @@
                                                                 </div>
                                                                 <div className="grid grid-cols-2 gap-2">
                                                                     <div>
-                                                                        <label className="text-[10px] text-gray-500 block">Kategória</label>
-                                                                        <input type="text" value={editCategory} onChange={e => setEditCategory(e.target.value)} className="w-full p-2 border rounded-lg text-xs" />
+                                                                        <label className="text-[10px] text-gray-500 block">Tárolóhely</label>
+                                                                        <select value={editStorage} onChange={e => setEditStorage(e.target.value)} className="w-full p-2 border rounded-lg text-xs bg-white">
+                                                                            {storageLocations.map(s => <option key={s} value={s}>{s}</option>)}
+                                                                        </select>
                                                                     </div>
                                                                     <div>
                                                                         <label className="text-[10px] text-gray-500 block">Mértékegység</label>
@@ -315,7 +333,7 @@
                                                                 </div>
                                                                 <div className="grid grid-cols-2 gap-2">
                                                                     <div>
-                                                                        <label className="text-[10px] text-gray-500 block">Lejárati dátum</label>
+                                                                        <label className="text-[10px] text-gray-500 block">Lejárati dátum (üresen hagyható)</label>
                                                                         <input type="date" value={editExpiry} onChange={e => setEditExpiry(e.target.value)} className="w-full p-2 border rounded-lg text-xs bg-white" />
                                                                     </div>
                                                                     <div>
@@ -338,6 +356,7 @@
                                                                             <button onClick={(e) => { e.stopPropagation(); startEditing(item); }} className="text-gray-400 hover:text-emerald-700 p-0.5 text-xs" title="Szerkesztés">
                                                                                 ✏️
                                                                             </button>
+                                                                            <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-medium">📍 {item.storage || 'Kamra'}</span>
                                                                             <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">{item.category}</span>
                                                                             {isExpired && (
                                                                                 <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-md font-bold animate-pulse">LEJÁRT!</span>
@@ -360,7 +379,7 @@
                                                                 </div>
 
                                                                 <button onClick={() => setExpandedItemId(isExpanded ? null : item.id)} className="mt-2 text-[11px] text-emerald-700 font-medium">
-                                                                    {isExpanded ? '▲ Részletek elrejtése' : '▼ Lejárat & Dátumok megtekintése'}
+                                                                    {isExpanded ? '▲ Részletek elrejtése' : '▼ Részletek megtekintése'}
                                                                 </button>
 
                                                                 {isExpanded && (
@@ -372,7 +391,7 @@
                                                                         <div className="flex justify-between text-gray-600">
                                                                             <span>Lejárati dátum:</span>
                                                                             <span className={`font-semibold ${isExpired ? 'text-red-600 font-bold text-sm' : 'text-gray-800'}`}>
-                                                                                {item.expiryDate || 'Nincs beállítva'} {isExpired ? '⚠️' : ''}
+                                                                                {item.expiryDate ? item.expiryDate : 'Nincs megadva'} {isExpired ? '⚠️' : ''}
                                                                             </span>
                                                                         </div>
                                                                         <div className="pt-2 flex justify-between items-center">
@@ -459,60 +478,84 @@
 
                         {/* ÚJ TÉTEL NÉZET */}
                         {activeTab === 'add' && (
-                            <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                                <h2 className="font-bold text-base mb-3 text-emerald-800">➕ Új tétel rögzítése</h2>
-                                <form onSubmit={handleAddItem} className="space-y-3">
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-600 mb-1">Tétel neve (pl. Tartós tej, Hús...)</label>
-                                        <input type="text" required placeholder="pl. Tej..." value={newName} onChange={e => handleNameChange(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm" />
-                                    </div>
+                            <div className="space-y-4">
+                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                                    <h2 className="font-bold text-base mb-3 text-emerald-800">➕ Új tétel rögzítése</h2>
+                                    <form onSubmit={handleAddItem} className="space-y-3">
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-600 mb-1">Tétel neve</label>
+                                            <input type="text" required placeholder="pl. Tej, Liszt..." value={newName} onChange={e => setNewName(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm" />
+                                        </div>
 
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-600 mb-1">Kategória</label>
-                                        <select value={newCategory} onChange={e => setNewCategory(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white mb-1.5">
-                                            {defaultCategories.map(c => <option key={c} value={c}>{c}</option>)}
-                                            <option value="Saját kategória...">+ Saját kategória beírása...</option>
-                                        </select>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="block text-xs font-medium text-gray-600 mb-1">Tárolóhely</label>
+                                                <select value={newStorage} onChange={e => setNewStorage(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white">
+                                                    {storageLocations.map(s => <option key={s} value={s}>{s}</option>)}
+                                                </select>
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-medium text-gray-600 mb-1">Kategória</label>
+                                                <select value={newCategory} onChange={e => setNewCategory(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white">
+                                                    {defaultCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                                                    <option value="Saját kategória...">+ Saját...</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
                                         {newCategory === 'Saját kategória...' && (
                                             <input type="text" placeholder="Írd be a saját kategóriát..." required value={customCategoryInput} onChange={e => setCustomCategoryInput(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-emerald-50" />
                                         )}
-                                    </div>
 
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div>
-                                            <label className="block text-xs font-medium text-gray-600 mb-1">Mennyiség</label>
-                                            <input type="number" min="0" value={newQty} onChange={e => setNewQty(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm" />
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="block text-xs font-medium text-gray-600 mb-1">Mennyiség</label>
+                                                <input type="number" min="0" value={newQty} onChange={e => setNewQty(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-medium text-gray-600 mb-1">Mértékegység</label>
+                                                <select value={newUnit} onChange={e => setNewUnit(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white mb-1">
+                                                    {defaultUnits.map(u => <option key={u} value={u}>{u}</option>)}
+                                                    <option value="Saját mértékegység...">+ Saját...</option>
+                                                </select>
+                                                {newUnit === 'Saját mértékegység...' && (
+                                                    <input type="text" placeholder="pl. doboz" required value={customUnitInput} onChange={e => setCustomUnitInput(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-emerald-50 mt-1" />
+                                                )}
+                                            </div>
                                         </div>
-                                        <div>
-                                            <label className="block text-xs font-medium text-gray-600 mb-1">Mértékegység</label>
-                                            <select value={newUnit} onChange={e => setNewUnit(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white mb-1">
-                                                {defaultUnits.map(u => <option key={u} value={u}>{u}</option>)}
-                                                <option value="Saját mértékegység...">+ Saját...</option>
-                                            </select>
-                                            {newUnit === 'Saját mértékegység...' && (
-                                                <input type="text" placeholder="pl. doboz, üveg" required value={customUnitInput} onChange={e => setCustomUnitInput(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-emerald-50 mt-1" />
-                                            )}
-                                        </div>
-                                    </div>
 
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div>
-                                            <label className="block text-xs font-medium text-gray-600 mb-1">Min. készlet</label>
-                                            <input type="number" min="0" value={newMin} onChange={e => setNewMin(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm" />
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="block text-xs font-medium text-gray-600 mb-1">Min. készlet</label>
+                                                <input type="number" min="0" value={newMin} onChange={e => setNewMin(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-medium text-gray-600 mb-1">Lejárati dátum (Opcionális)</label>
+                                                <input type="date" value={newExpiry} onChange={e => setNewExpiry(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white" />
+                                            </div>
                                         </div>
-                                        <div>
-                                            <label className="block text-xs font-medium text-gray-600 mb-1">Lejárati dátum</label>
-                                            <input type="date" value={newExpiry} onChange={e => setNewExpiry(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white" />
+
+                                        <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-xl border border-gray-200">
+                                            <input type="checkbox" id="autoShopping" checked={newAutoShopping} onChange={e => setNewAutoShopping(e.target.checked)} className="w-4 h-4 text-emerald-600 rounded" />
+                                            <label htmlFor="autoShopping" className="text-xs text-gray-700 cursor-pointer">Kerüljön a bevásárlólistára, ha kevés van belőle</label>
                                         </div>
-                                    </div>
 
-                                    <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-xl border border-gray-200">
-                                        <input type="checkbox" id="autoShopping" checked={newAutoShopping} onChange={e => setNewAutoShopping(e.target.checked)} className="w-4 h-4 text-emerald-600 rounded" />
-                                        <label htmlFor="autoShopping" className="text-xs text-gray-700 cursor-pointer">Kerüljön a bevásárlólistára, ha kevés van belőle</label>
-                                    </div>
+                                        <button type="submit" className="w-full bg-emerald-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-700 mt-2">Mentés a felhőbe</button>
+                                    </form>
+                                </div>
 
-                                    <button type="submit" className="w-full bg-emerald-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-700 mt-2">Mentés a felhőbe</button>
-                                </form>
+                                {/* Segédlet táblázat */}
+                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 text-xs">
+                                    <h3 className="font-bold text-emerald-800 mb-2">💡 Lejárati idő segédlet (Átlagos ciklusok)</h3>
+                                    <div className="space-y-1.5 text-gray-600">
+                                        {expiryGuide.map((item, idx) => (
+                                            <div key={idx} className="flex justify-between border-b border-gray-50 pb-1">
+                                                <span className="font-medium text-gray-800">{item.name}</span>
+                                                <span className="text-gray-500">{item.cycle}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         )}
 

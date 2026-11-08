@@ -157,7 +157,6 @@
                 setActiveTab('inventory');
             };
 
-            // Szerkesztés megkezdése
             const startEditing = (item) => {
                 setEditingItemId(item.id);
                 setEditName(item.name || '');
@@ -167,7 +166,6 @@
                 setEditUnit(item.unit || 'db');
             };
 
-            // Szerkesztett adatok mentése a felhőbe
             const saveEdit = async (id) => {
                 if (!editName.trim()) return;
                 await db.collection('spajz_items').doc(id).update({
@@ -284,14 +282,23 @@
                                                 const isExpanded = expandedItemId === item.id;
                                                 const isEditing = editingItemId === item.id;
                                                 const isExpired = item.expiryDate && item.expiryDate < todayStr;
+                                                const isOutOfStock = item.qty <= 0;
                                                 
+                                                // Háttérszín meghatározása: ha lejárt, piros; ha elfogyott, sárga/borostyán; különben fehér
+                                                let cardBgClass = "bg-white border-gray-100";
+                                                if (isExpired) {
+                                                    cardBgClass = "bg-red-50 border-red-200";
+                                                } else if (isOutOfStock) {
+                                                    cardBgClass = "bg-amber-50 border-amber-200";
+                                                }
+
                                                 return (
-                                                    <div key={item.id} className={`p-3.5 rounded-xl shadow-sm border ${isExpired ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`}>
+                                                    <div key={item.id} className={`p-3.5 rounded-xl shadow-sm border ${cardBgClass}`}>
                                                         
                                                         {/* SZERKESZTŐ NÉZET */}
                                                         {isEditing ? (
-                                                            <div className="space-y-3 bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-200">
-                                                                <h4 className="text-xs font-bold text-emerald-800">✏️ Tétel szerkesztése</h4>
+                                                            <div className="space-y-3 bg-white/80 p-2.5 rounded-lg border border-amber-200">
+                                                                <h4 className="text-xs font-bold text-amber-900">✏️ Tétel szerkesztése</h4>
                                                                 <div>
                                                                     <label className="text-[10px] text-gray-500 block">Név</label>
                                                                     <input type="text" value={editName} onChange={e => setEditName(e.target.value)} className="w-full p-2 border rounded-lg text-xs" />
@@ -326,7 +333,7 @@
                                                             <div>
                                                                 <div className="flex justify-between items-center">
                                                                     <div className="cursor-pointer flex-1" onClick={() => setExpandedItemId(isExpanded ? null : item.id)}>
-                                                                        <div className="flex items-center gap-2">
+                                                                        <div className="flex items-center gap-2 flex-wrap">
                                                                             <h3 className="font-semibold text-sm">{item.name}</h3>
                                                                             <button onClick={(e) => { e.stopPropagation(); startEditing(item); }} className="text-gray-400 hover:text-emerald-700 p-0.5 text-xs" title="Szerkesztés">
                                                                                 ✏️
@@ -335,9 +342,12 @@
                                                                             {isExpired && (
                                                                                 <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-md font-bold animate-pulse">LEJÁRT!</span>
                                                                             )}
+                                                                            {isOutOfStock && !isExpired && (
+                                                                                <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-md font-bold animate-pulse">ELFOGYOTT!</span>
+                                                                            )}
                                                                         </div>
                                                                         <p className="text-xs text-gray-500 mt-1">
-                                                                            Készlet: <span className={item.qty <= 0 ? "text-red-600 font-bold" : item.qty <= item.min ? "text-amber-600 font-bold" : "text-emerald-600 font-bold"}>
+                                                                            Készlet: <span className={isOutOfStock ? "text-red-600 font-bold" : item.qty <= item.min ? "text-amber-600 font-bold" : "text-emerald-600 font-bold"}>
                                                                                 {item.qty} {item.unit}
                                                                             </span> (Min: {item.min})
                                                                         </p>

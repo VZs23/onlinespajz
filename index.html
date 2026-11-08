@@ -18,7 +18,7 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <link rel="apple-touch-icon" href="spajzicon.png" />
 </head>
-<body class="bg-gray-50 text-gray-900 pb-24">
+<body class="pb-24 transition-colors duration-300">
     <div id="root"></div>
 
     <script type="text/babel">
@@ -42,6 +42,11 @@
             const [expandedItemId, setExpandedItemId] = React.useState(null);
             const [editingItemId, setEditingItemId] = React.useState(null);
             
+            // Sötét mód state (alapból világos, vagy mentett beállítás)
+            const [darkMode, setDarkMode] = React.useState(() => {
+                return localStorage.getItem('spajz_dark_mode') === 'true';
+            });
+
             const [items, setItems] = React.useState([]);
             const [customShoppingItems, setCustomShoppingItems] = React.useState([]);
             const [logs, setLogs] = React.useState([]);
@@ -49,7 +54,7 @@
             const [searchTerm, setSearchTerm] = React.useState('');
             const [storageFilter, setStorageFilter] = React.useState('Összes');
             const [selectedCategory, setSelectedCategory] = React.useState('Összes');
-            const [sortBy, setSortBy] = React.useState('newest'); // 'abc', 'abc-rev', 'newest', 'oldest'
+            const [sortBy, setSortBy] = React.useState('newest');
 
             const [showQuickAdd, setShowQuickAdd] = React.useState(false);
 
@@ -90,6 +95,12 @@
 
             const allStorageLocations = ['Összes', ...Array.from(new Set([...defaultStorageLocations, ...items.map(i => i.storage).filter(Boolean)]))];
             const allCategories = ['Összes', ...Array.from(new Set([...defaultCategories, ...items.map(i => i.category).filter(Boolean)]))];
+
+            const toggleDarkMode = () => {
+                const nextMode = !darkMode;
+                setDarkMode(nextMode);
+                localStorage.setItem('spajz_dark_mode', nextMode);
+            };
 
             const getStorageIcon = (storageName) => {
                 switch(storageName) {
@@ -307,7 +318,6 @@
                 .slice(0, 10);
             const maxConsumed = Math.max(...topConsumedList.map(i => i.count), 1);
 
-            // Szűrés és Rendezés
             const filteredItems = items
                 .filter(i => storageFilter === 'Összes' || i.storage === storageFilter)
                 .filter(i => selectedCategory === 'Összes' || i.category === selectedCategory)
@@ -325,25 +335,41 @@
                     return 0;
                 });
 
+            // Dinamikus stílusok sötét / világos módhoz
+            const bgClass = darkMode ? 'bg-gray-950 text-gray-100' : 'bg-gray-50 text-gray-900';
+            const cardBg = darkMode ? 'bg-gray-900 border-gray-800 text-gray-100' : 'bg-white border-gray-100 text-gray-900';
+            const inputBg = darkMode ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-400' : 'bg-white border-gray-200 text-gray-900';
+            const subText = darkMode ? 'text-gray-400' : 'text-gray-500';
+            const navBg = darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200';
+
             return (
-                <div className="max-w-md mx-auto p-4 min-h-screen flex flex-col justify-between">
+                <div className={`max-w-md mx-auto p-4 min-h-screen flex flex-col justify-between ${bgClass}`}>
                     <div>
-                        {/* Fejléc */}
+                        {/* Fejléc sötét mód kapcsolóval */}
                         <header className="bg-emerald-700 text-white p-4 rounded-2xl shadow-lg mb-4 flex justify-between items-center">
                             <div>
                                 <h1 className="text-xl font-bold">🏠 Online Spájz</h1>
                                 <p className="text-xs text-emerald-100">☁️ Felhőben szinkronizálva</p>
                             </div>
-                            <span className="bg-emerald-800 text-xs px-3 py-1.5 rounded-full font-semibold">
-                                {items.length} tétel
-                            </span>
+                            <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={toggleDarkMode} 
+                                    className="bg-emerald-800 hover:bg-emerald-900 text-white p-2 rounded-xl text-sm shadow-md transition-all flex items-center justify-center w-9 h-9"
+                                    title={darkMode ? "Világos módra váltás" : "Sötét módra váltás"}
+                                >
+                                    {darkMode ? '☀️' : '🌙'}
+                                </button>
+                                <span className="bg-emerald-800 text-xs px-3 py-1.5 rounded-full font-semibold">
+                                    {items.length} tétel
+                                </span>
+                            </div>
                         </header>
 
                         {/* Figyelmeztető sáv */}
                         {(lowStockItems.length > 0 || customShoppingItems.length > 0) && (
-                            <div className="bg-amber-50 border-l-4 border-amber-500 p-3 rounded-xl mb-4 shadow-sm text-xs text-amber-800 flex justify-between items-center">
+                            <div className={`border-l-4 p-3 rounded-xl mb-4 shadow-sm text-xs flex justify-between items-center ${darkMode ? 'bg-amber-950/60 border-amber-500 text-amber-200' : 'bg-amber-50 border-amber-500 text-amber-800'}`}>
                                 <span><span className="font-bold">⚠️ Bevásárlólista:</span> {lowStockItems.length + customShoppingItems.length} tétel vár megvételre!</span>
-                                <button onClick={() => setActiveTab('shopping')} className="font-bold underline text-amber-900">Megnézem</button>
+                                <button onClick={() => setActiveTab('shopping')} className="font-bold underline">Megnézem</button>
                             </div>
                         )}
 
@@ -356,7 +382,7 @@
                                         placeholder="Keresés a spájzban..." 
                                         value={searchTerm}
                                         onChange={(e) => setSearchTerm(e.target.value)}
-                                        className="w-full p-2.5 border rounded-xl text-sm shadow-sm bg-white"
+                                        className={`w-full p-2.5 border rounded-xl text-sm shadow-sm ${inputBg}`}
                                     />
                                 </div>
 
@@ -368,7 +394,7 @@
                                             <button
                                                 key={loc}
                                                 onClick={() => setStorageFilter(loc)}
-                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${storageFilter === loc ? 'bg-emerald-700 text-white shadow-sm' : 'bg-gray-200 text-gray-700'}`}
+                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${storageFilter === loc ? 'bg-emerald-700 text-white shadow-sm' : darkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-200 text-gray-700'}`}
                                             >
                                                 {getStorageIcon(loc)} {loc}
                                             </button>
@@ -381,7 +407,7 @@
                                             <button
                                                 key={cat}
                                                 onClick={() => setSelectedCategory(cat)}
-                                                className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${selectedCategory === cat ? 'bg-emerald-600 text-white shadow-sm' : 'bg-gray-100 text-gray-600'}`}
+                                                className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ${selectedCategory === cat ? 'bg-emerald-600 text-white shadow-sm' : darkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}
                                             >
                                                 {cat}
                                             </button>
@@ -389,9 +415,9 @@
                                     </div>
 
                                     {/* 3. Sor: Rendezési sáv */}
-                                    <div className="flex justify-between items-center bg-white p-2 rounded-xl border border-gray-200 text-xs">
-                                        <span className="text-gray-500 font-medium">Rendezés:</span>
-                                        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="bg-gray-50 p-1 rounded-lg border text-xs font-semibold text-emerald-800">
+                                    <div className={`flex justify-between items-center p-2 rounded-xl border text-xs ${cardBg}`}>
+                                        <span className={`font-medium ${subText}`}>Rendezés:</span>
+                                        <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`p-1 rounded-lg border text-xs font-semibold ${darkMode ? 'bg-gray-800 text-emerald-400 border-gray-700' : 'bg-gray-50 text-emerald-800 border-gray-300'}`}>
                                             <option value="newest">📅 Legújabb elöl</option>
                                             <option value="oldest">⏳ Legrégebbi elöl</option>
                                             <option value="abc">🔤 ABC (A-Z)</option>
@@ -404,23 +430,23 @@
                                 <div className="mb-4">
                                     <button 
                                         onClick={openQuickAdd} 
-                                        className="w-full bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs py-2.5 rounded-xl font-bold flex items-center justify-center gap-1.5 shadow-sm hover:bg-emerald-100 transition-all"
+                                        className={`w-full border text-xs py-2.5 rounded-xl font-bold flex items-center justify-center gap-1.5 shadow-sm transition-all ${darkMode ? 'bg-emerald-950/40 border-emerald-700 text-emerald-300 hover:bg-emerald-900/50' : 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100'}`}
                                     >
                                         <span>{showQuickAdd ? '✖️ Mégse' : `➕ Új tétel felvétele ide (${getStorageIcon(storageFilter === 'Összes' ? 'Kamra' : storageFilter)} ${storageFilter === 'Összes' ? 'Kamra' : storageFilter} / ${selectedCategory === 'Összes' ? 'Alapanyag' : selectedCategory})`}</span>
                                     </button>
 
                                     {showQuickAdd && (
-                                        <form onSubmit={handleAddItem} className="mt-2 bg-white p-3.5 rounded-2xl shadow-md border border-emerald-200 space-y-3">
-                                            <h4 className="text-xs font-bold text-emerald-800 border-b pb-1">
+                                        <form onSubmit={handleAddItem} className={`mt-2 p-3.5 rounded-2xl shadow-md border space-y-3 ${cardBg}`}>
+                                            <h4 className="text-xs font-bold text-emerald-600 border-b pb-1">
                                                 ➕ Rögzítés a(z) <span className="underline">{newStorage}</span> / <span className="underline">{newCategory}</span> kategóriába
                                             </h4>
                                             <div>
-                                                <input type="text" required placeholder="Tétel neve (pl. Tej, Liszt...)" value={newName} onChange={e => setNewName(e.target.value)} className="w-full p-2 border rounded-xl text-xs bg-gray-50" />
+                                                <input type="text" required placeholder="Tétel neve (pl. Tej, Liszt...)" value={newName} onChange={e => setNewName(e.target.value)} className={`w-full p-2 border rounded-xl text-xs ${inputBg}`} />
                                             </div>
                                             <div className="grid grid-cols-2 gap-2">
                                                 <div>
-                                                    <label className="text-[10px] text-gray-500 block">Tárolóhely</label>
-                                                    <select value={newStorage} onChange={e => setNewStorage(e.target.value)} className="w-full p-2 border rounded-xl text-xs bg-white mb-1">
+                                                    <label className={`text-[10px] block ${subText}`}>Tárolóhely</label>
+                                                    <select value={newStorage} onChange={e => setNewStorage(e.target.value)} className={`w-full p-2 border rounded-xl text-xs mb-1 ${inputBg}`}>
                                                         {defaultStorageLocations.map(s => <option key={s} value={s}>{getStorageIcon(s)} {s}</option>)}
                                                         {allStorageLocations.filter(l => l !== 'Összes' && !defaultStorageLocations.includes(l)).map(customLoc => (
                                                             <option key={customLoc} value={customLoc}>📍 {customLoc}</option>
@@ -428,12 +454,12 @@
                                                         <option value="Saját tárolóhely...">+ Saját...</option>
                                                     </select>
                                                     {newStorage === 'Saját tárolóhely...' && (
-                                                        <input type="text" placeholder="Írd be a tárolót..." required value={customStorageInput} onChange={e => setCustomStorageInput(e.target.value)} className="w-full p-2 border rounded-xl text-xs bg-emerald-50 mt-1" />
+                                                        <input type="text" placeholder="Írd be a tárolót..." required value={customStorageInput} onChange={e => setCustomStorageInput(e.target.value)} className={`w-full p-2 border rounded-xl text-xs mt-1 ${darkMode ? 'bg-emerald-950/60 border-emerald-800 text-white' : 'bg-emerald-50 border-emerald-300'}`} />
                                                     )}
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] text-gray-500 block">Kategória</label>
-                                                    <select value={newCategory} onChange={e => setNewCategory(e.target.value)} className="w-full p-2 border rounded-xl text-xs bg-white mb-1">
+                                                    <label className={`text-[10px] block ${subText}`}>Kategória</label>
+                                                    <select value={newCategory} onChange={e => setNewCategory(e.target.value)} className={`w-full p-2 border rounded-xl text-xs mb-1 ${inputBg}`}>
                                                         {defaultCategories.map(c => <option key={c} value={c}>{c}</option>)}
                                                         {allCategories.filter(c => c !== 'Összes' && !defaultCategories.includes(c)).map(customCat => (
                                                             <option key={customCat} value={customCat}>🏷️ {customCat}</option>
@@ -441,23 +467,23 @@
                                                         <option value="Saját kategória...">+ Saját...</option>
                                                     </select>
                                                     {newCategory === 'Saját kategória...' && (
-                                                        <input type="text" placeholder="Írd be a kategóriát..." required value={customCategoryInput} onChange={e => setCustomCategoryInput(e.target.value)} className="w-full p-2 border rounded-xl text-xs bg-emerald-50 mt-1" />
+                                                        <input type="text" placeholder="Írd be a kategóriát..." required value={customCategoryInput} onChange={e => setCustomCategoryInput(e.target.value)} className={`w-full p-2 border rounded-xl text-xs mt-1 ${darkMode ? 'bg-emerald-950/60 border-emerald-800 text-white' : 'bg-emerald-50 border-emerald-300'}`} />
                                                     )}
                                                 </div>
                                             </div>
                                             <div className="grid grid-cols-2 gap-2">
                                                 <div>
-                                                    <label className="text-[10px] text-gray-500 block">Mennyiség & egység</label>
+                                                    <label className={`text-[10px] block ${subText}`}>Mennyiség & egység</label>
                                                     <div className="flex gap-1">
-                                                        <input type="number" min="0" value={newQty} onChange={e => setNewQty(e.target.value)} className="w-1/2 p-2 border rounded-xl text-xs" />
-                                                        <select value={newUnit} onChange={e => setNewUnit(e.target.value)} className="w-1/2 p-2 border rounded-xl text-xs bg-white">
+                                                        <input type="number" min="0" value={newQty} onChange={e => setNewQty(e.target.value)} className={`w-1/2 p-2 border rounded-xl text-xs ${inputBg}`} />
+                                                        <select value={newUnit} onChange={e => setNewUnit(e.target.value)} className={`w-1/2 p-2 border rounded-xl text-xs ${inputBg}`}>
                                                             {defaultUnits.map(u => <option key={u} value={u}>{u}</option>)}
                                                         </select>
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <label className="text-[10px] text-gray-500 block">Lejárati dátum (Kézi)</label>
-                                                    <input type="date" value={newExpiry} onChange={e => setNewExpiry(e.target.value)} className="w-full p-2 border rounded-xl text-xs bg-white" />
+                                                    <label className={`text-[10px] block ${subText}`}>Lejárati dátum (Kézi)</label>
+                                                    <input type="date" value={newExpiry} onChange={e => setNewExpiry(e.target.value)} className={`w-full p-2 border rounded-xl text-xs ${inputBg}`} />
                                                 </div>
                                             </div>
                                             <button type="submit" className="w-full bg-emerald-600 text-white text-xs py-2 rounded-xl font-bold hover:bg-emerald-700">Mentés közvetlenül ide</button>
@@ -467,9 +493,9 @@
 
                                 <div className="space-y-2.5">
                                     {filteredItems.length === 0 ? (
-                                        <div className="text-center py-8 bg-white rounded-2xl border border-gray-100">
-                                            <p className="text-sm text-gray-500">Nincs találat a szűrésnek megfelelő tételre!</p>
-                                            <p className="text-xs text-gray-400 mt-1">Vegyél fel új tételeket fent vagy a ➕ menüpontban.</p>
+                                        <div className={`text-center py-8 rounded-2xl border ${cardBg}`}>
+                                            <p className={`text-sm ${subText}`}>Nincs találat a szűrésnek megfelelő tételre!</p>
+                                            <p className={`text-xs mt-1 ${subText}`}>Vegyél fel új tételeket fent vagy a ➕ menüpontban.</p>
                                         </div>
                                     ) : (
                                         filteredItems.map(item => {
@@ -478,28 +504,28 @@
                                             const isExpired = item.expiryDate && item.expiryDate.trim() !== '' && item.expiryDate < todayStr;
                                             const isOutOfStock = item.qty <= 0;
                                             
-                                            let cardBgClass = "bg-white border-gray-100";
+                                            let cardStyle = cardBg;
                                             if (isExpired) {
-                                                cardBgClass = "bg-red-50 border-red-200";
+                                                cardStyle = darkMode ? "bg-red-950/50 border-red-900 text-gray-100" : "bg-red-50 border-red-200 text-gray-900";
                                             } else if (isOutOfStock) {
-                                                cardBgClass = "bg-amber-50 border-amber-200";
+                                                cardStyle = darkMode ? "bg-amber-950/50 border-amber-900 text-gray-100" : "bg-amber-50 border-amber-200 text-gray-900";
                                             }
 
                                             return (
-                                                <div key={item.id} className={`p-3.5 rounded-xl shadow-sm border ${cardBgClass}`}>
+                                                <div key={item.id} className={`p-3.5 rounded-xl shadow-sm border ${cardStyle}`}>
                                                     
                                                     {/* SZERKESZTŐ NÉZET */}
                                                     {isEditing ? (
-                                                        <div className="space-y-3 bg-white/90 p-2.5 rounded-lg border border-amber-200">
-                                                            <h4 className="text-xs font-bold text-amber-900">✏️ Tétel szerkesztése</h4>
+                                                        <div className={`space-y-3 p-2.5 rounded-lg border ${darkMode ? 'bg-gray-900 border-amber-800' : 'bg-white/90 border-amber-200'}`}>
+                                                            <h4 className="text-xs font-bold text-amber-500">✏️ Tétel szerkesztése</h4>
                                                             <div>
-                                                                <label className="text-[10px] text-gray-500 block">Név</label>
-                                                                <input type="text" value={editName} onChange={e => setEditName(e.target.value)} className="w-full p-2 border rounded-lg text-xs" />
+                                                                <label className={`text-[10px] block ${subText}`}>Név</label>
+                                                                <input type="text" value={editName} onChange={e => setEditName(e.target.value)} className={`w-full p-2 border rounded-lg text-xs ${inputBg}`} />
                                                             </div>
                                                             <div className="grid grid-cols-2 gap-2">
                                                                 <div>
-                                                                    <label className="text-[10px] text-gray-500 block">Tárolóhely</label>
-                                                                    <select value={editStorage} onChange={e => setEditStorage(e.target.value)} className="w-full p-2 border rounded-lg text-xs bg-white mb-1">
+                                                                    <label className={`text-[10px] block ${subText}`}>Tárolóhely</label>
+                                                                    <select value={editStorage} onChange={e => setEditStorage(e.target.value)} className={`w-full p-2 border rounded-lg text-xs mb-1 ${inputBg}`}>
                                                                         {defaultStorageLocations.map(s => <option key={s} value={s}>{getStorageIcon(s)} {s}</option>)}
                                                                         {allStorageLocations.filter(l => l !== 'Összes' && !defaultStorageLocations.includes(l)).map(customLoc => (
                                                                             <option key={customLoc} value={customLoc}>📍 {customLoc}</option>
@@ -507,12 +533,12 @@
                                                                         <option value="Saját tárolóhely...">+ Saját...</option>
                                                                     </select>
                                                                     {editStorage === 'Saját tárolóhely...' && (
-                                                                        <input type="text" placeholder="Saját tároló..." required value={editCustomStorageInput} onChange={e => setEditCustomStorageInput(e.target.value)} className="w-full p-2 border rounded-lg text-xs bg-emerald-50" />
+                                                                        <input type="text" placeholder="Saját tároló..." required value={editCustomStorageInput} onChange={e => setEditCustomStorageInput(e.target.value)} className={`w-full p-2 border rounded-lg text-xs ${inputBg}`} />
                                                                     )}
                                                                 </div>
                                                                 <div>
-                                                                    <label className="text-[10px] text-gray-500 block">Kategória</label>
-                                                                    <select value={editCategory} onChange={e => setEditCategory(e.target.value)} className="w-full p-2 border rounded-lg text-xs bg-white mb-1">
+                                                                    <label className={`text-[10px] block ${subText}`}>Kategória</label>
+                                                                    <select value={editCategory} onChange={e => setEditCategory(e.target.value)} className={`w-full p-2 border rounded-lg text-xs mb-1 ${inputBg}`}>
                                                                         {defaultCategories.map(c => <option key={c} value={c}>{c}</option>)}
                                                                         {allCategories.filter(c => c !== 'Összes' && !defaultCategories.includes(c)).map(customCat => (
                                                                             <option key={customCat} value={customCat}>🏷️ {customCat}</option>
@@ -520,27 +546,27 @@
                                                                         <option value="Saját kategória...">+ Saját...</option>
                                                                     </select>
                                                                     {editCategory === 'Saját kategória...' && (
-                                                                        <input type="text" placeholder="Saját kategória..." required value={editCustomCategoryInput} onChange={e => setEditCustomCategoryInput(e.target.value)} className="w-full p-2 border rounded-lg text-xs bg-emerald-50" />
+                                                                        <input type="text" placeholder="Saját kategória..." required value={editCustomCategoryInput} onChange={e => setEditCustomCategoryInput(e.target.value)} className={`w-full p-2 border rounded-lg text-xs ${inputBg}`} />
                                                                     )}
                                                                 </div>
                                                             </div>
                                                             <div className="grid grid-cols-2 gap-2">
                                                                 <div>
-                                                                    <label className="text-[10px] text-gray-500 block">Mértékegység</label>
-                                                                    <input type="text" value={editUnit} onChange={e => setEditUnit(e.target.value)} className="w-full p-2 border rounded-lg text-xs" />
+                                                                    <label className={`text-[10px] block ${subText}`}>Mértékegység</label>
+                                                                    <input type="text" value={editUnit} onChange={e => setEditUnit(e.target.value)} className={`w-full p-2 border rounded-lg text-xs ${inputBg}`} />
                                                                 </div>
                                                                 <div>
-                                                                    <label className="text-[10px] text-gray-500 block">Min. készlet</label>
-                                                                    <input type="number" min="0" value={editMin} onChange={e => setEditMin(e.target.value)} className="w-full p-2 border rounded-lg text-xs" />
+                                                                    <label className={`text-[10px] block ${subText}`}>Min. készlet</label>
+                                                                    <input type="number" min="0" value={editMin} onChange={e => setEditMin(e.target.value)} className={`w-full p-2 border rounded-lg text-xs ${inputBg}`} />
                                                                 </div>
                                                             </div>
                                                             <div>
-                                                                <label className="text-[10px] text-gray-500 block">Lejárati dátum</label>
-                                                                <input type="date" value={editExpiry} onChange={e => setEditExpiry(e.target.value)} className="w-full p-2 border rounded-lg text-xs bg-white" />
+                                                                <label className={`text-[10px] block ${subText}`}>Lejárati dátum</label>
+                                                                <input type="date" value={editExpiry} onChange={e => setEditExpiry(e.target.value)} className={`w-full p-2 border rounded-lg text-xs ${inputBg}`} />
                                                             </div>
                                                             <div className="flex gap-2 pt-1">
                                                                 <button onClick={() => saveEdit(item.id)} className="flex-1 bg-emerald-600 text-white text-xs py-1.5 rounded-lg font-bold">Mentés</button>
-                                                                <button onClick={() => setEditingItemId(null)} className="flex-1 bg-gray-200 text-gray-700 text-xs py-1.5 rounded-lg">Mégse</button>
+                                                                <button onClick={() => setEditingItemId(null)} className={`flex-1 py-1.5 rounded-lg text-xs ${darkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-200 text-gray-700'}`}>Mégse</button>
                                                             </div>
                                                         </div>
                                                     ) : (
@@ -550,11 +576,11 @@
                                                                 <div className="cursor-pointer flex-1" onClick={() => setExpandedItemId(isExpanded ? null : item.id)}>
                                                                     <div className="flex items-center gap-2 flex-wrap">
                                                                         <h3 className="font-semibold text-sm">{item.name}</h3>
-                                                                        <button onClick={(e) => { e.stopPropagation(); startEditing(item); }} className="text-gray-400 hover:text-emerald-700 p-0.5 text-xs" title="Szerkesztés">
+                                                                        <button onClick={(e) => { e.stopPropagation(); startEditing(item); }} className="text-gray-400 hover:text-emerald-500 p-0.5 text-xs" title="Szerkesztés">
                                                                             ✏️
                                                                         </button>
-                                                                        <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-medium">{getStorageIcon(item.storage)} {item.storage || 'Kamra'}</span>
-                                                                        <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">{item.category}</span>
+                                                                        <span className={`text-[10px] px-2 py-0.5 rounded-md font-medium ${darkMode ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-emerald-100 text-emerald-800'}`}>{getStorageIcon(item.storage)} {item.storage || 'Kamra'}</span>
+                                                                        <span className={`text-[10px] px-2 py-0.5 rounded-md ${darkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>{item.category}</span>
                                                                         {isExpired && (
                                                                             <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-md font-bold animate-pulse">LEJÁRT!</span>
                                                                         )}
@@ -563,8 +589,8 @@
                                                                         )}
                                                                     </div>
                                                                     <div className="flex justify-between items-center mt-1 pr-2">
-                                                                        <p className="text-xs text-gray-500">
-                                                                            Készlet: <span className={isOutOfStock ? "text-red-600 font-bold" : item.qty <= item.min ? "text-amber-600 font-bold" : "text-emerald-600 font-bold"}>
+                                                                        <p className={`text-xs ${subText}`}>
+                                                                            Készlet: <span className={isOutOfStock ? "text-red-500 font-bold" : item.qty <= item.min ? "text-amber-500 font-bold" : "text-emerald-500 font-bold"}>
                                                                                 {item.qty} {item.unit}
                                                                             </span> (Min: {item.min})
                                                                         </p>
@@ -573,28 +599,28 @@
                                                                 </div>
 
                                                                 <div className="flex items-center gap-1.5 ml-2">
-                                                                    <button onClick={() => updateQty(item.id, -1)} className="bg-gray-100 w-8 h-8 rounded-lg font-bold flex items-center justify-center hover:bg-gray-200">-</button>
-                                                                    <button onClick={() => updateQty(item.id, 1)} className="bg-emerald-100 text-emerald-800 w-8 h-8 rounded-lg font-bold flex items-center justify-center hover:bg-emerald-200">+</button>
+                                                                    <button onClick={() => updateQty(item.id, -1)} className={`w-8 h-8 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'}`}>-</button>
+                                                                    <button onClick={() => updateQty(item.id, 1)} className={`w-8 h-8 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 hover:bg-emerald-900' : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'}`}>+</button>
                                                                 </div>
                                                             </div>
 
-                                                            <button onClick={() => setExpandedItemId(isExpanded ? null : item.id)} className="mt-2 text-[11px] text-emerald-700 font-medium">
+                                                            <button onClick={() => setExpandedItemId(isExpanded ? null : item.id)} className="mt-2 text-[11px] text-emerald-500 font-medium">
                                                                 {isExpanded ? '▲ Részletek elrejtése' : '▼ Részletek megtekintése'}
                                                             </button>
 
                                                             {isExpanded && (
-                                                                <div className="mt-3 pt-3 border-t border-gray-100 bg-white/60 p-2.5 rounded-lg text-xs space-y-2">
-                                                                    <div className="flex justify-between text-gray-600">
+                                                                <div className={`mt-3 pt-3 border-t p-2.5 rounded-lg text-xs space-y-2 ${darkMode ? 'border-gray-800 bg-gray-950/40' : 'border-gray-100 bg-white/60'}`}>
+                                                                    <div className={`flex justify-between ${subText}`}>
                                                                         <span>Lejárati dátum:</span>
-                                                                        <span className={`font-semibold ${isExpired ? 'text-red-600 font-bold text-sm' : 'text-gray-800'}`}>
+                                                                        <span className={`font-semibold ${isExpired ? 'text-red-500 font-bold text-sm' : darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
                                                                             {item.expiryDate ? item.expiryDate : 'Nincs megadva'} {isExpired ? '⚠️' : ''}
                                                                         </span>
                                                                     </div>
                                                                     <div className="pt-2 flex justify-between items-center">
-                                                                        <button onClick={() => startEditing(item)} className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-md text-xs font-medium border border-emerald-200">
+                                                                        <button onClick={() => startEditing(item)} className={`px-3 py-1 rounded-md text-xs font-medium border ${darkMode ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
                                                                             ✏️ Szerkesztés
                                                                         </button>
-                                                                        <button onClick={() => deletePantryItem(item.id, item.name)} className="bg-red-100 text-red-700 px-3 py-1 rounded-md text-xs font-medium hover:bg-red-200">
+                                                                        <button onClick={() => deletePantryItem(item.id, item.name)} className="bg-red-500/20 text-red-400 px-3 py-1 rounded-md text-xs font-medium hover:bg-red-500/30">
                                                                             🗑️ Tétel törlése
                                                                         </button>
                                                                     </div>
@@ -613,31 +639,31 @@
                         {/* BEVÁSÁRLÓLISTA NÉZET */}
                         {activeTab === 'shopping' && (
                             <div className="space-y-4">
-                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
+                                <div className={`p-4 rounded-2xl shadow-sm border ${cardBg}`}>
                                     <div className="flex justify-between items-center mb-3">
-                                        <h2 className="font-bold text-base text-emerald-800">🛒 Bevásárlólista</h2>
+                                        <h2 className="font-bold text-base text-emerald-600">🛒 Bevásárlólista</h2>
                                         <button onClick={() => setShowAddCustom(!showAddCustom)} className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-emerald-700">
                                             {showAddCustom ? 'Mégse' : '+ Egyedi tétel felírása'}
                                         </button>
                                     </div>
 
                                     {showAddCustom && (
-                                        <form onSubmit={handleAddCustomShopping} className="bg-emerald-50 p-3 rounded-xl mb-4 space-y-2 border border-emerald-200">
-                                            <input type="text" placeholder="Mit kell venni? (pl. Sütőpapír)" required value={customName} onChange={e => setCustomName(e.target.value)} className="w-full p-2 text-xs border rounded-lg" />
-                                            <input type="text" placeholder="Megjegyzés (pl. 2 csomag)" value={customNote} onChange={e => setCustomNote(e.target.value)} className="w-full p-2 text-xs border rounded-lg" />
-                                            <button type="submit" className="w-full bg-emerald-700 text-white text-xs py-2 rounded-lg font-semibold hover:bg-emerald-800">Felírás a listára</button>
+                                        <form onSubmit={handleAddCustomShopping} className={`p-3 rounded-xl mb-4 space-y-2 border ${darkMode ? 'bg-emerald-950/40 border-emerald-800' : 'bg-emerald-50 border-emerald-200'}`}>
+                                            <input type="text" placeholder="Mit kell venni? (pl. Sütőpapír)" required value={customName} onChange={e => setCustomName(e.target.value)} className={`w-full p-2 text-xs border rounded-lg ${inputBg}`} />
+                                            <input type="text" placeholder="Megjegyzés (pl. 2 csomag)" value={customNote} onChange={e => setCustomNote(e.target.value)} className={`w-full p-2 text-xs border rounded-lg ${inputBg}`} />
+                                            <button type="submit" className="w-full bg-emerald-600 text-white text-xs py-2 rounded-lg font-semibold hover:bg-emerald-700">Felírás a listára</button>
                                         </form>
                                     )}
 
                                     {customShoppingItems.length > 0 && (
                                         <div className="mb-4">
-                                            <h3 className="text-xs font-bold text-gray-500 mb-2 uppercase">📝 Egyedileg felírt tételek</h3>
+                                            <h3 className={`text-xs font-bold mb-2 uppercase ${subText}`}>📝 Egyedileg felírt tételek</h3>
                                             <div className="space-y-2">
                                                 {customShoppingItems.map(item => (
-                                                    <div key={item.id} className="flex justify-between items-center p-3 bg-purple-50 rounded-xl border border-purple-100">
+                                                    <div key={item.id} className={`flex justify-between items-center p-3 rounded-xl border ${darkMode ? 'bg-purple-950/40 border-purple-900 text-purple-200' : 'bg-purple-50 border-purple-100 text-purple-900'}`}>
                                                         <div>
-                                                            <h4 className="font-semibold text-sm text-purple-900">{item.name}</h4>
-                                                            {item.note && <p className="text-xs text-purple-600">{item.note}</p>}
+                                                            <h4 className="font-semibold text-sm">{item.name}</h4>
+                                                            {item.note && <p className={`text-xs ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>{item.note}</p>}
                                                         </div>
                                                         <button onClick={() => removeCustomShopping(item.id)} className="bg-purple-600 text-white text-xs px-2.5 py-1.5 rounded-lg hover:bg-purple-700">
                                                             ✓ Megvéve / Törlés
@@ -649,16 +675,16 @@
                                     )}
 
                                     <div>
-                                        <h3 className="text-xs font-bold text-gray-500 mb-2 uppercase">📦 Kifogyott spájz tételek</h3>
+                                        <h3 className={`text-xs font-bold mb-2 uppercase ${subText}`}>📦 Kifogyott spájz tételek</h3>
                                         {lowStockItems.length === 0 ? (
-                                            <p className="text-xs text-gray-400 py-2">Mindenből van elég a spájzban!</p>
+                                            <p className={`text-xs py-2 ${subText}`}>Mindenből van elég a spájzban!</p>
                                         ) : (
                                             <div className="space-y-2">
                                                 {lowStockItems.map(item => (
-                                                    <div key={item.id} className="flex justify-between items-center p-3 bg-red-50 rounded-xl border border-red-100">
+                                                    <div key={item.id} className={`flex justify-between items-center p-3 rounded-xl border ${darkMode ? 'bg-red-950/40 border-red-900 text-red-200' : 'bg-red-50 border-red-100 text-red-900'}`}>
                                                         <div>
-                                                            <h4 className="font-semibold text-sm text-red-900">{item.name}</h4>
-                                                            <p className="text-xs text-red-600">Jelenleg: {item.qty} {item.unit} (Min: {item.min})</p>
+                                                            <h4 className="font-semibold text-sm">{item.name}</h4>
+                                                            <p className={`text-xs ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Jelenleg: {item.qty} {item.unit} (Min: {item.min})</p>
                                                         </div>
                                                         <button onClick={() => updateQty(item.id, item.min + 1 - item.qty)} className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-emerald-700">
                                                             + Feltöltve
@@ -675,18 +701,18 @@
                         {/* ÚJ TÉTEL NÉZET */}
                         {activeTab === 'add' && (
                             <div className="space-y-4">
-                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                                    <h2 className="font-bold text-base mb-3 text-emerald-800">➕ Új tétel rögzítése</h2>
+                                <div className={`p-4 rounded-2xl shadow-sm border ${cardBg}`}>
+                                    <h2 className="font-bold text-base mb-3 text-emerald-600">➕ Új tétel rögzítése</h2>
                                     <form onSubmit={handleAddItem} className="space-y-3">
                                         <div>
-                                            <label className="block text-xs font-medium text-gray-600 mb-1">Tétel neve</label>
-                                            <input type="text" required placeholder="pl. Tej, Liszt..." value={newName} onChange={e => setNewName(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm" />
+                                            <label className={`block text-xs font-medium mb-1 ${subText}`}>Tétel neve</label>
+                                            <input type="text" required placeholder="pl. Tej, Liszt..." value={newName} onChange={e => setNewName(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm ${inputBg}`} />
                                         </div>
 
                                         <div className="grid grid-cols-2 gap-2">
                                             <div>
-                                                <label className="block text-xs font-medium text-gray-600 mb-1">Tárolóhely</label>
-                                                <select value={newStorage} onChange={e => setNewStorage(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white mb-1">
+                                                <label className={`block text-xs font-medium mb-1 ${subText}`}>Tárolóhely</label>
+                                                <select value={newStorage} onChange={e => setNewStorage(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm mb-1 ${inputBg}`}>
                                                     {defaultStorageLocations.map(s => <option key={s} value={s}>{getStorageIcon(s)} {s}</option>)}
                                                     {allStorageLocations.filter(l => l !== 'Összes' && !defaultStorageLocations.includes(l)).map(customLoc => (
                                                         <option key={customLoc} value={customLoc}>📍 {customLoc}</option>
@@ -694,12 +720,12 @@
                                                     <option value="Saját tárolóhely...">+ Saját...</option>
                                                 </select>
                                                 {newStorage === 'Saját tárolóhely...' && (
-                                                    <input type="text" placeholder="Írd be a tárolót..." required value={customStorageInput} onChange={e => setCustomStorageInput(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-emerald-50 mt-1" />
+                                                    <input type="text" placeholder="Írd be a tárolót..." required value={customStorageInput} onChange={e => setCustomStorageInput(e.target.value)} className={`w-full p-2.5 border rounded-xl text-xs mt-1 ${inputBg}`} />
                                                 )}
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-medium text-gray-600 mb-1">Kategória</label>
-                                                <select value={newCategory} onChange={e => setNewCategory(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white mb-1">
+                                                <label className={`block text-xs font-medium mb-1 ${subText}`}>Kategória</label>
+                                                <select value={newCategory} onChange={e => setNewCategory(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm mb-1 ${inputBg}`}>
                                                     {defaultCategories.map(c => <option key={c} value={c}>{c}</option>)}
                                                     {allCategories.filter(c => c !== 'Összes' && !defaultCategories.includes(c)).map(customCat => (
                                                         <option key={customCat} value={customCat}>🏷️ {customCat}</option>
@@ -707,42 +733,42 @@
                                                     <option value="Saját kategória...">+ Saját...</option>
                                                 </select>
                                                 {newCategory === 'Saját kategória...' && (
-                                                    <input type="text" placeholder="Írd be a kategóriát..." required value={customCategoryInput} onChange={e => setCustomCategoryInput(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-emerald-50 mt-1" />
+                                                    <input type="text" placeholder="Írd be a kategóriát..." required value={customCategoryInput} onChange={e => setCustomCategoryInput(e.target.value)} className={`w-full p-2.5 border rounded-xl text-xs mt-1 ${inputBg}`} />
                                                 )}
                                             </div>
                                         </div>
 
                                         <div className="grid grid-cols-2 gap-2">
                                             <div>
-                                                <label className="block text-xs font-medium text-gray-600 mb-1">Mennyiség</label>
-                                                <input type="number" min="0" value={newQty} onChange={e => setNewQty(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm" />
+                                                <label className={`block text-xs font-medium mb-1 ${subText}`}>Mennyiség</label>
+                                                <input type="number" min="0" value={newQty} onChange={e => setNewQty(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm ${inputBg}`} />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-medium text-gray-600 mb-1">Mértékegység</label>
-                                                <select value={newUnit} onChange={e => setNewUnit(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white mb-1">
+                                                <label className={`block text-xs font-medium mb-1 ${subText}`}>Mértékegység</label>
+                                                <select value={newUnit} onChange={e => setNewUnit(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm mb-1 ${inputBg}`}>
                                                     {defaultUnits.map(u => <option key={u} value={u}>{u}</option>)}
                                                     <option value="Saját mértékegység...">+ Saját...</option>
                                                 </select>
                                                 {newUnit === 'Saját mértékegység...' && (
-                                                    <input type="text" placeholder="pl. doboz" required value={customUnitInput} onChange={e => setCustomUnitInput(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-emerald-50 mt-1" />
+                                                    <input type="text" placeholder="pl. doboz" required value={customUnitInput} onChange={e => setCustomUnitInput(e.target.value)} className={`w-full p-2.5 border rounded-xl text-xs mt-1 ${inputBg}`} />
                                                 )}
                                             </div>
                                         </div>
 
                                         <div className="grid grid-cols-2 gap-2">
                                             <div>
-                                                <label className="block text-xs font-medium text-gray-600 mb-1">Min. készlet</label>
-                                                <input type="number" min="0" value={newMin} onChange={e => setNewMin(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm" />
+                                                <label className={`block text-xs font-medium mb-1 ${subText}`}>Min. készlet</label>
+                                                <input type="number" min="0" value={newMin} onChange={e => setNewMin(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm ${inputBg}`} />
                                             </div>
                                             <div>
-                                                <label className="block text-xs font-medium text-gray-600 mb-1">Lejárati dátum (Opcionális)</label>
-                                                <input type="date" value={newExpiry} onChange={e => setNewExpiry(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white" />
+                                                <label className={`block text-xs font-medium mb-1 ${subText}`}>Lejárati dátum (Opcionális)</label>
+                                                <input type="date" value={newExpiry} onChange={e => setNewExpiry(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm ${inputBg}`} />
                                             </div>
                                         </div>
 
-                                        <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-xl border border-gray-200">
+                                        <div className={`flex items-center gap-2 p-3 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
                                             <input type="checkbox" id="autoShopping" checked={newAutoShopping} onChange={e => setNewAutoShopping(e.target.checked)} className="w-4 h-4 text-emerald-600 rounded" />
-                                            <label htmlFor="autoShopping" className="text-xs text-gray-700 cursor-pointer">Kerüljön a bevásárlólistára, ha kevés van belőle</label>
+                                            <label htmlFor="autoShopping" className={`text-xs cursor-pointer ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Kerüljön a bevásárlólistára, ha kevés van belőle</label>
                                         </div>
 
                                         <button type="submit" className="w-full bg-emerald-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-700 mt-2">Mentés a felhőbe</button>
@@ -750,13 +776,13 @@
                                 </div>
 
                                 {/* Segédlet táblázat */}
-                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 text-xs">
-                                    <h3 className="font-bold text-emerald-800 mb-2">💡 Lejárati idő segédlet (Átlagos ciklusok)</h3>
-                                    <div className="space-y-1.5 text-gray-600">
+                                <div className={`p-4 rounded-2xl shadow-sm border text-xs ${cardBg}`}>
+                                    <h3 className="font-bold text-emerald-600 mb-2">💡 Lejárati idő segédlet (Átlagos ciklusok)</h3>
+                                    <div className={`space-y-1.5 ${subText}`}>
                                         {expiryGuide.map((item, idx) => (
-                                            <div key={idx} className="flex justify-between border-b border-gray-50 pb-1">
-                                                <span className="font-medium text-gray-800">{item.name}</span>
-                                                <span className="text-gray-500">{item.cycle}</span>
+                                            <div key={idx} className={`flex justify-between border-b pb-1 ${darkMode ? 'border-gray-800' : 'border-gray-50'}`}>
+                                                <span className={`font-medium ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{item.name}</span>
+                                                <span>{item.cycle}</span>
                                             </div>
                                         ))}
                                     </div>
@@ -767,14 +793,14 @@
                         {/* STATISZTIKA ÉS NAPLÓ NÉZET */}
                         {activeTab === 'stats' && (
                             <div className="space-y-4">
-                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-100">
-                                    <h2 className="font-bold text-base mb-1 text-emerald-800 flex items-center gap-1.5">
+                                <div className={`p-4 rounded-2xl shadow-sm border ${cardBg}`}>
+                                    <h2 className="font-bold text-base mb-1 text-emerald-600 flex items-center gap-1.5">
                                         <span>🔥</span> Top 10 Legtöbbet Fogyó Élelmiszer
                                     </h2>
-                                    <p className="text-xs text-gray-500 mb-3">A spájzból a legtöbbször levont és felhasznált alapanyagok</p>
+                                    <p className={`text-xs mb-3 ${subText}`}>A spájzból a legtöbbször levont és felhasznált alapanyagok</p>
 
                                     {topConsumedList.length === 0 ? (
-                                        <p className="text-xs text-gray-400 py-3 text-center">Még nincs rögzített fogyás. Amint elkezded csökkenteni a spájz tételeit a minusz (-) gombbal, itt fog megjelenni a statisztika!</p>
+                                        <p className={`text-xs py-3 text-center ${subText}`}>Még nincs rögzített fogyás. Amint elkezded csökkenteni a spájz tételeit a minusz (-) gombbal, itt fog megjelenni a statisztika!</p>
                                     ) : (
                                         <div className="space-y-2.5">
                                             {topConsumedList.map((item, index) => {
@@ -782,14 +808,14 @@
                                                 return (
                                                     <div key={item.name} className="space-y-1">
                                                         <div className="flex justify-between items-center text-xs">
-                                                            <span className="font-bold text-gray-800">
-                                                                <span className="text-emerald-700 font-extrabold mr-1">#{index + 1}</span> {item.name}
+                                                            <span className={`font-bold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>
+                                                                <span className="text-emerald-500 font-extrabold mr-1">#{index + 1}</span> {item.name}
                                                             </span>
-                                                            <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                                            <span className="bg-orange-500/20 text-orange-400 px-2 py-0.5 rounded-full text-[10px] font-bold">
                                                                 {item.count} db/alkalom fogyott
                                                             </span>
                                                         </div>
-                                                        <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                                                        <div className={`w-full h-2.5 rounded-full overflow-hidden ${darkMode ? 'bg-gray-800' : 'bg-gray-100'}`}>
                                                             <div 
                                                                 className="h-full bg-gradient-to-r from-amber-400 to-orange-500 rounded-full transition-all duration-500" 
                                                                 style={{ width: `${barPercentage}%` }}
@@ -802,12 +828,12 @@
                                     )}
                                 </div>
 
-                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                                    <h2 className="font-bold text-base mb-1 text-emerald-800">📊 Jelenlegi Készlet Diagram</h2>
-                                    <p className="text-xs text-gray-500 mb-4">Rendelkezésre álló mennyiségek</p>
+                                <div className={`p-4 rounded-2xl shadow-sm border ${cardBg}`}>
+                                    <h2 className="font-bold text-base mb-1 text-emerald-600">📊 Jelenlegi Készlet Diagram</h2>
+                                    <p className={`text-xs mb-4 ${subText}`}>Rendelkezésre álló mennyiségek</p>
 
                                     {items.length === 0 ? (
-                                        <p className="text-xs text-gray-400 py-4 text-center">Nincs elérhető adat a diagramhoz.</p>
+                                        <p className={`text-xs py-4 text-center ${subText}`}>Nincs elérhető adat a diagramhoz.</p>
                                     ) : (
                                         <div className="space-y-3">
                                             {items.map(item => {
@@ -822,10 +848,10 @@
                                                 return (
                                                     <div key={item.id} className="space-y-1">
                                                         <div className="flex justify-between items-center text-xs">
-                                                            <span className="font-semibold text-gray-800">{item.name} <span className="text-[10px] text-gray-400">({getStorageIcon(item.storage)} {item.storage})</span></span>
-                                                            <span className="font-bold text-emerald-700">{item.qty} {item.unit}</span>
+                                                            <span className={`font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{item.name} <span className="text-[10px] text-gray-500">({getStorageIcon(item.storage)} {item.storage})</span></span>
+                                                            <span className="font-bold text-emerald-500">{item.qty} {item.unit}</span>
                                                         </div>
-                                                        <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden flex items-center">
+                                                        <div className={`w-full h-3 rounded-full overflow-hidden flex items-center ${darkMode ? 'bg-gray-800' : 'bg-gray-100'}`}>
                                                             <div 
                                                                 className={`h-full ${barColor} rounded-full transition-all duration-500`} 
                                                                 style={{ width: `${percentage}%` }}
@@ -838,19 +864,19 @@
                                     )}
                                 </div>
 
-                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 text-xs space-y-2">
-                                    <h3 className="font-bold text-gray-700 uppercase tracking-wider text-[11px] mb-2">🏷️ Készlet eloszlása kategóriák szerint</h3>
+                                <div className={`p-4 rounded-2xl shadow-sm border text-xs space-y-2 ${cardBg}`}>
+                                    <h3 className={`font-bold uppercase tracking-wider text-[11px] mb-2 ${subText}`}>🏷️ Készlet eloszlása kategóriák szerint</h3>
                                     {Object.keys(categoryCounts).length === 0 ? (
-                                        <p className="text-gray-400">Nincs rögzített adat.</p>
+                                        <p className="text-gray-500">Nincs rögzített adat.</p>
                                     ) : (
                                         Object.entries(categoryCounts).map(([cat, qty]) => {
                                             const catPercentage = totalItemCount > 0 ? Math.round((qty / totalItemCount) * 100) : 0;
                                             return (
-                                                <div key={cat} className="flex justify-between items-center py-1 border-b border-gray-50">
-                                                    <span className="font-medium text-gray-700">{cat}</span>
+                                                <div key={cat} className={`flex justify-between items-center py-1 border-b ${darkMode ? 'border-gray-800' : 'border-gray-50'}`}>
+                                                    <span className={`font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>{cat}</span>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-gray-500">{qty} egység</span>
-                                                        <span className="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full text-[10px] font-bold">{catPercentage}%</span>
+                                                        <span className="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full text-[10px] font-bold">{catPercentage}%</span>
                                                     </div>
                                                 </div>
                                             );
@@ -858,16 +884,16 @@
                                     )}
                                 </div>
 
-                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                                    <h2 className="font-bold text-sm mb-3 text-emerald-800">📝 Eseménynapló</h2>
+                                <div className={`p-4 rounded-2xl shadow-sm border ${cardBg}`}>
+                                    <h2 className="font-bold text-sm mb-3 text-emerald-600">📝 Eseménynapló</h2>
                                     <div className="space-y-2 max-h-60 overflow-y-auto">
                                         {logs.length === 0 ? (
-                                            <p className="text-xs text-gray-400">Még nincs rögzített naplóbejegyzés.</p>
+                                            <p className={`text-xs ${subText}`}>Még nincs rögzített naplóbejegyzés.</p>
                                         ) : (
                                             logs.map(log => (
-                                                <div key={log.id} className="p-2.5 bg-gray-50 rounded-xl text-xs flex justify-between items-center border border-gray-100">
+                                                <div key={log.id} className={`p-2.5 rounded-xl text-xs flex justify-between items-center border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-100'}`}>
                                                     <span>{log.text}</span>
-                                                    <span className="text-gray-400 text-[10px]">{log.date}</span>
+                                                    <span className="text-gray-500 text-[10px]">{log.date}</span>
                                                 </div>
                                             ))
                                         )}
@@ -878,11 +904,11 @@
                     </div>
 
                     {/* Navigációs sáv */}
-                    <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 py-2.5 px-4 flex justify-around items-center max-w-md mx-auto shadow-lg rounded-t-2xl">
-                        <button onClick={() => setActiveTab('inventory')} className={`flex flex-col items-center text-xs font-medium ${activeTab === 'inventory' ? 'text-emerald-600' : 'text-gray-400'}`}>
+                    <nav className={`fixed bottom-0 left-0 right-0 border-t py-2.5 px-4 flex justify-around items-center max-w-md mx-auto shadow-lg rounded-t-2xl ${navBg}`}>
+                        <button onClick={() => setActiveTab('inventory')} className={`flex flex-col items-center text-xs font-medium ${activeTab === 'inventory' ? 'text-emerald-500' : 'text-gray-500'}`}>
                             <span>📦 Spájz</span>
                         </button>
-                        <button onClick={() => setActiveTab('shopping')} className={`flex flex-col items-center text-xs font-medium relative ${activeTab === 'shopping' ? 'text-emerald-600' : 'text-gray-400'}`}>
+                        <button onClick={() => setActiveTab('shopping')} className={`flex flex-col items-center text-xs font-medium relative ${activeTab === 'shopping' ? 'text-emerald-500' : 'text-gray-500'}`}>
                             <span>🛒 Lista</span>
                             {(lowStockItems.length + customShoppingItems.length) > 0 && (
                                 <span className="absolute -top-1 -right-2 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
@@ -890,10 +916,10 @@
                                 </span>
                             )}
                         </button>
-                        <button onClick={() => setActiveTab('add')} className={`flex flex-col items-center text-xs font-medium ${activeTab === 'add' ? 'text-emerald-600' : 'text-gray-400'}`}>
+                        <button onClick={() => setActiveTab('add')} className={`flex flex-col items-center text-xs font-medium ${activeTab === 'add' ? 'text-emerald-500' : 'text-gray-500'}`}>
                             <span>➕ Új tétel</span>
                         </button>
-                        <button onClick={() => setActiveTab('stats')} className={`flex flex-col items-center text-xs font-medium ${activeTab === 'stats' ? 'text-emerald-600' : 'text-gray-400'}`}>
+                        <button onClick={() => setActiveTab('stats')} className={`flex flex-col items-center text-xs font-medium ${activeTab === 'stats' ? 'text-emerald-500' : 'text-gray-500'}`}>
                             <span>📊 Grafikon</span>
                         </button>
                     </nav>

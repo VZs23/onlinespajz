@@ -20,12 +20,13 @@
     <script type="text/babel">
         function App() {
             const [activeTab, setActiveTab] = React.useState('inventory');
+            const [expandedItemId, setExpandedItemId] = React.useState(null);
             
-            // Spájz tételek (autoShoppingControls: ha false, nem kerül fel automatikusan a listára)
+            // Spájz tételek dátummal és lejárat dátummal
             const [items, setItems] = React.useState([
-                { id: 1, name: 'Búzaliszt', category: 'Alapanyag', qty: 2, unit: 'kg', min: 1, autoShopping: true },
-                { id: 2, name: 'Kristálycukor', category: 'Alapanyag', qty: 0, unit: 'kg', min: 1, autoShopping: true },
-                { id: 3, name: 'Különleges Fűszer', category: 'Egyéb', qty: 0, unit: 'db', min: 1, autoShopping: false }
+                { id: 1, name: 'Búzaliszt', category: 'Alapanyag', qty: 2, unit: 'kg', min: 1, autoShopping: true, addedDate: '2026-11-01', expiryDate: '2027-05-15' },
+                { id: 2, name: 'Tej 1.5%', category: 'Hűtő', qty: 1, unit: 'liter', min: 2, autoShopping: true, addedDate: '2026-11-05', expiryDate: '2026-11-12' },
+                { id: 3, name: 'Különleges Fűszer', category: 'Egyéb', qty: 1, unit: 'db', min: 1, autoShopping: false, addedDate: '2026-10-20', expiryDate: '' }
             ]);
 
             // Külön felírt bevásárlólista tételek
@@ -46,6 +47,7 @@
             const [newQty, setNewQty] = React.useState(1);
             const [newUnit, setNewUnit] = React.useState('db');
             const [newMin, setNewMin] = React.useState(1);
+            const [newExpiry, setNewExpiry] = React.useState('');
             const [newAutoShopping, setNewAutoShopping] = React.useState(true);
 
             // Új önálló bevásárlólista tétel state
@@ -59,6 +61,7 @@
             const handleAddItem = (e) => {
                 e.preventDefault();
                 if (!newName.trim()) return;
+                const today = new Date().toISOString().split('T')[0];
                 const newItem = {
                     id: Date.now(),
                     name: newName,
@@ -66,11 +69,14 @@
                     qty: Number(newQty),
                     unit: newUnit,
                     min: Number(newMin),
-                    autoShopping: newAutoShopping
+                    autoShopping: newAutoShopping,
+                    addedDate: today,
+                    expiryDate: newExpiry
                 };
                 setItems([...items, newItem]);
                 setLogs([{ id: Date.now(), date: new Date().toLocaleDateString(), text: `Hozzáadva a spájzhoz: ${newName}` }, ...logs]);
                 setNewName('');
+                setNewExpiry('');
                 setActiveTab('inventory');
             };
 
@@ -82,6 +88,15 @@
                 setCustomName('');
                 setCustomNote('');
                 setShowAddCustom(false);
+            };
+
+            // Törlések
+            const deletePantryItem = (id) => {
+                const itemToDelete = items.find(i => i.id === id);
+                if (confirm(`Biztosan törölni szeretnéd ezt a tételt a spájzból: ${itemToDelete?.name}?`)) {
+                    setItems(items.filter(item => item.id !== id));
+                    setLogs([{ id: Date.now(), date: new Date().toLocaleDateString(), text: `Törölve a spájzból: ${itemToDelete?.name}` }, ...logs]);
+                }
             };
 
             const removeCustomShopping = (id) => {
@@ -107,7 +122,7 @@
                         <header className="bg-emerald-700 text-white p-4 rounded-2xl shadow-lg mb-4 flex justify-between items-center">
                             <div>
                                 <h1 className="text-xl font-bold">🏠 Online Spájz</h1>
-                                <p className="text-xs text-emerald-100">Konyhai raktárkészlet</p>
+                                <p className="text-xs text-emerald-100">Konyhai raktár & Lejáratok</p>
                             </div>
                             <span className="bg-emerald-800 text-xs px-3 py-1.5 rounded-full font-semibold">
                                 {items.length} tétel
@@ -116,8 +131,9 @@
 
                         {/* Figyelmeztetés */}
                         {(lowStockItems.length > 0 || customShoppingItems.length > 0) && (
-                            <div className="bg-amber-50 border-l-4 border-amber-500 p-3 rounded-xl mb-4 shadow-sm text-xs text-amber-800">
-                                <span className="font-bold">⚠️ Bevásárlólista:</span> {lowStockItems.length + customShoppingItems.length} tétel van a listán!
+                            <div className="bg-amber-50 border-l-4 border-amber-500 p-3 rounded-xl mb-4 shadow-sm text-xs text-amber-800 flex justify-between items-center">
+                                <span><span className="font-bold">⚠️ Bevásárlólista:</span> {lowStockItems.length + customShoppingItems.length} tétel van a listán!</span>
+                                <button onClick={() => setActiveTab('shopping')} className="font-bold underline text-amber-900">Megnézem</button>
                             </div>
                         )}
 
@@ -150,34 +166,69 @@
                                     {items
                                         .filter(i => selectedCategory === 'Összes' || i.category === selectedCategory)
                                         .filter(i => i.name.toLowerCase().includes(searchTerm.toLowerCase()))
-                                        .map(item => (
-                                            <div key={item.id} className="bg-white p-3.5 rounded-xl shadow-sm flex justify-between items-center border border-gray-100">
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <h3 className="font-semibold text-sm">{item.name}</h3>
-                                                        <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">{item.category}</span>
-                                                        {!item.autoShopping && (
-                                                            <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded-md" title="Nem kerül automatikusan a listára">🛡️ Külön téves</span>
-                                                        )}
+                                        .map(item => {
+                                            const isExpanded = expandedItemId === item.id;
+                                            return (
+                                                <div key={item.id} className="bg-white p-3.5 rounded-xl shadow-sm border border-gray-100 transition-all">
+                                                    <div className="flex justify-between items-center">
+                                                        <div className="cursor-pointer flex-1" onClick={() => setExpandedItemId(isExpanded ? null : item.id)}>
+                                                            <div className="flex items-center gap-2">
+                                                                <h3 className="font-semibold text-sm">{item.name}</h3>
+                                                                <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">{item.category}</span>
+                                                            </div>
+                                                            <p className="text-xs text-gray-500 mt-1">
+                                                                Készlet: <span className={item.qty <= 0 ? "text-red-600 font-bold" : item.qty <= item.min ? "text-amber-600 font-bold" : "text-emerald-600 font-bold"}>
+                                                                    {item.qty} {item.unit}
+                                                                </span> (Min: {item.min})
+                                                            </p>
+                                                        </div>
+
+                                                        <div className="flex items-center gap-1.5">
+                                                            <button 
+                                                                onClick={() => updateQty(item.id, -1)}
+                                                                className="bg-gray-100 w-8 h-8 rounded-lg font-bold flex items-center justify-center hover:bg-gray-200 text-gray-700"
+                                                            >-</button>
+                                                            <button 
+                                                                onClick={() => updateQty(item.id, 1)}
+                                                                className="bg-emerald-100 text-emerald-800 w-8 h-8 rounded-lg font-bold flex items-center justify-center hover:bg-emerald-200"
+                                                            >+</button>
+                                                        </div>
                                                     </div>
-                                                    <p className="text-xs text-gray-500 mt-1">
-                                                        Készlet: <span className={item.qty <= 0 ? "text-red-600 font-bold" : item.qty <= item.min ? "text-amber-600 font-bold" : "text-emerald-600 font-bold"}>
-                                                            {item.qty} {item.unit}
-                                                        </span> (Min: {item.min} {item.unit})
-                                                    </p>
-                                                </div>
-                                                <div className="flex items-center gap-1.5">
+
+                                                    {/* Lenyeitható gomb */}
                                                     <button 
-                                                        onClick={() => updateQty(item.id, -1)}
-                                                        className="bg-gray-100 w-8 h-8 rounded-lg font-bold flex items-center justify-center hover:bg-gray-200 text-gray-700"
-                                                    >-</button>
-                                                    <button 
-                                                        onClick={() => updateQty(item.id, 1)}
-                                                        className="bg-emerald-100 text-emerald-800 w-8 h-8 rounded-lg font-bold flex items-center justify-center hover:bg-emerald-200"
-                                                    >+</button>
+                                                        onClick={() => setExpandedItemId(isExpanded ? null : item.id)}
+                                                        className="mt-2 text-[11px] text-emerald-700 font-medium flex items-center gap-1 focus:outline-none"
+                                                    >
+                                                        {isExpanded ? '▲ Dátumok elrejtése' : '▼ Dátumok & Lejárat megtekintése'}
+                                                    </button>
+
+                                                    {/* LENYÍLÓ RÉSZ: DÁTUMOK ÉS TÖRLÉS */}
+                                                    {isExpanded && (
+                                                        <div className="mt-3 pt-3 border-t border-gray-100 bg-gray-50 p-2.5 rounded-lg text-xs space-y-2">
+                                                            <div className="flex justify-between text-gray-600">
+                                                                <span>Hozzáadva:</span>
+                                                                <span className="font-semibold">{item.addedDate || 'Nincs megadva'}</span>
+                                                            </div>
+                                                            <div className="flex justify-between text-gray-600">
+                                                                <span>Lejárat dátuma:</span>
+                                                                <span className={`font-semibold ${item.expiryDate ? 'text-red-600' : 'text-gray-400'}`}>
+                                                                    {item.expiryDate || 'Nincs beállítva'}
+                                                                </span>
+                                                            </div>
+                                                            <div className="pt-2 flex justify-end">
+                                                                <button 
+                                                                    onClick={() => deletePantryItem(item.id)}
+                                                                    className="bg-red-100 text-red-700 px-3 py-1 rounded-md text-xs font-medium hover:bg-red-200 flex items-center gap-1"
+                                                                >
+                                                                    🗑️ Tétel törlése a Spájzból
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                 </div>
                             </div>
                         )}
@@ -190,7 +241,7 @@
                                         <h2 className="font-bold text-base text-emerald-800">🛒 Bevásárlólista</h2>
                                         <button 
                                             onClick={() => setShowAddCustom(!showAddCustom)}
-                                            className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-medium"
+                                            className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-medium shadow-sm hover:bg-emerald-700"
                                         >
                                             {showAddCustom ? 'Mégse' : '+ Egyedi tétel felírása'}
                                         </button>
@@ -201,20 +252,20 @@
                                         <form onSubmit={handleAddCustomShopping} className="bg-emerald-50 p-3 rounded-xl mb-4 border border-emerald-200 space-y-2">
                                             <input 
                                                 type="text" 
-                                                placeholder="Mit kell venni? (pl. Sütőpapír)" 
+                                                placeholder="Mit kell venni? (pl. Sütőpapír, Szalvéta)" 
                                                 required
                                                 value={customName}
                                                 onChange={e => setCustomName(e.target.value)}
-                                                className="w-full p-2 text-xs border rounded-lg"
+                                                className="w-full p-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
                                             />
                                             <input 
                                                 type="text" 
                                                 placeholder="Megjegyzés (pl. 2 csomag, akciós...)" 
                                                 value={customNote}
                                                 onChange={e => setCustomNote(e.target.value)}
-                                                className="w-full p-2 text-xs border rounded-lg"
+                                                className="w-full p-2 text-xs border rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
                                             />
-                                            <button type="submit" className="w-full bg-emerald-700 text-white text-xs py-1.5 rounded-lg font-semibold">
+                                            <button type="submit" className="w-full bg-emerald-700 text-white text-xs py-2 rounded-lg font-semibold hover:bg-emerald-800">
                                                 Felírás a listára
                                             </button>
                                         </form>
@@ -233,9 +284,9 @@
                                                         </div>
                                                         <button 
                                                             onClick={() => removeCustomShopping(item.id)}
-                                                            className="bg-purple-600 text-white text-xs px-2.5 py-1.5 rounded-lg font-medium"
+                                                            className="bg-purple-600 text-white text-xs px-2.5 py-1.5 rounded-lg font-medium hover:bg-purple-700"
                                                         >
-                                                            ✓ Megvéve
+                                                            ✓ Megvéve / Törlés
                                                         </button>
                                                     </div>
                                                 ))}
@@ -258,7 +309,7 @@
                                                         </div>
                                                         <button 
                                                             onClick={() => updateQty(item.id, item.min + 1 - item.qty)}
-                                                            className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg font-medium"
+                                                            className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg font-medium hover:bg-emerald-700"
                                                         >
                                                             + Feltöltve
                                                         </button>
@@ -274,14 +325,14 @@
                         {/* ÚJ TÉTEL NÉZET */}
                         {activeTab === 'add' && (
                             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                                <h2 className="font-bold text-base mb-3 text-emerald-800">➕ Új tétel rögzítése a Spájzba</h2>
+                                <h2 className="font-bold text-base mb-3 text-emerald-800">➕ Új tétel rögzítése</h2>
                                 <form onSubmit={handleAddItem} className="space-y-3">
                                     <div>
                                         <label className="block text-xs font-medium text-gray-600 mb-1">Tétel neve</label>
                                         <input 
                                             type="text" 
                                             required
-                                            placeholder="pl. Liszt, Cukor..." 
+                                            placeholder="pl. Tej, Sajt, Liszt..." 
                                             value={newName}
                                             onChange={e => setNewName(e.target.value)}
                                             className="w-full p-2.5 border rounded-xl text-sm focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -323,25 +374,35 @@
                                             </select>
                                         </div>
                                     </div>
-                                    <div>
-                                        <label className="block text-xs font-medium text-gray-600 mb-1">Minimális készlet</label>
-                                        <input 
-                                            type="number" 
-                                            min="0" 
-                                            value={newMin} 
-                                            onChange={e => setNewMin(e.target.value)}
-                                            className="w-full p-2.5 border rounded-xl text-sm"
-                                        />
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-600 mb-1">Minimális készlet</label>
+                                            <input 
+                                                type="number" 
+                                                min="0" 
+                                                value={newMin} 
+                                                onChange={e => setNewMin(e.target.value)}
+                                                className="w-full p-2.5 border rounded-xl text-sm"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-medium text-gray-600 mb-1">Lejárati dátum (Opcionális)</label>
+                                            <input 
+                                                type="date" 
+                                                value={newExpiry} 
+                                                onChange={e => setNewExpiry(e.target.value)}
+                                                className="w-full p-2.5 border rounded-xl text-sm bg-white"
+                                            />
+                                        </div>
                                     </div>
 
-                                    {/* ÚJ FUNKCIÓ: Kapcsoló, hogy a bevásárlólistára kerüljön-e */}
                                     <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-xl border border-gray-200 mt-2">
                                         <input 
                                             type="checkbox" 
                                             id="autoShopping"
                                             checked={newAutoShopping}
                                             onChange={e => setNewAutoShopping(e.target.checked)}
-                                            className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500"
+                                            className="w-4 h-4 text-emerald-600 rounded"
                                         />
                                         <label htmlFor="autoShopping" className="text-xs text-gray-700 cursor-pointer">
                                             Kerüljön a bevásárlólistára, ha kevés van belőle

@@ -187,7 +187,6 @@
                 setEditName(item.name || '');
                 setEditCategory(item.category || 'Alapanyag');
                 
-                // Ellenőrizzük, hogy az alapértelmezettek között van-e, ha nem, sajátként kezeljük
                 if (defaultStorageLocations.includes(item.storage)) {
                     setEditStorage(item.storage || 'Kamra');
                     setEditCustomStorageInput('');
@@ -238,6 +237,25 @@
                 const item = items.find(i => i.id === id);
                 if (!item) return;
                 const newQty = Math.max(0, item.qty + delta);
+                
+                // Mentjük a naplóba is a levonást/fogyasztást
+                if (delta < 0) {
+                    await db.collection('spajz_logs').add({
+                        text: `Fogyasztva / Levonva: ${item.name} (-${Math.abs(delta)} ${item.unit})`,
+                        itemName: item.name,
+                        consumedQty: Math.abs(delta),
+                        unit: item.unit,
+                        date: new Date().toLocaleDateString(),
+                        timestamp: Date.now()
+                    });
+                } else if (delta > 0) {
+                    await db.collection('spajz_logs').add({
+                        text: `Készlet növelve: ${item.name} (+${delta} ${item.unit})`,
+                        date: new Date().toLocaleDateString(),
+                        timestamp: Date.now()
+                    });
+                }
+
                 await db.collection('spajz_items').doc(id).update({ qty: newQty });
             };
 
@@ -259,6 +277,7 @@
             const lowStockItems = items.filter(i => i.qty <= i.min && i.autoShopping);
             const todayStr = new Date().toISOString().split('T')[0];
 
+            // Statisztika számítások
             const maxQtyInPantry = Math.max(...items.map(i => i.qty || 0), 1);
             const categoryCounts = items.reduce((acc, curr) => {
                 const cat = curr.category || 'Egyéb';
@@ -266,6 +285,22 @@
                 return acc;
             }, {});
             const totalItemCount = items.reduce((sum, curr) => sum + (curr.qty || 0), 0);
+
+            // TOP 10 Legtöbbet fogyó termék kiszámítása a naplóból és a készletekből
+            const consumptionMap = {};
+            logs.forEach(log => {
+                if (log.consumedQty && log.itemName) {
+                    consumptionMap[log.itemName] = (consumptionMap[log.itemName] || 0) + log.consumedQty;
+                }
+            });
+
+            // Ha még nincs elég naplózott fogyás, bevonjuk a legkisebb készletű tételeket is kitöltésként
+            const topConsumedList = Object.entries(consumptionMap)
+                .map(([name, count]) => ({ name, count }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 10);
+
+            const maxConsumed = Math.max(...topConsumedList.map(i => i.count), 1);
 
             return (
                 <div className="max-w-md mx-auto p-4 min-h-screen flex flex-col justify-between">
@@ -484,7 +519,6 @@
                                                                                     {item.qty} {item.unit}
                                                                                 </span> (Min: {item.min})
                                                                             </p>
-                                                                            {/* Hozzáadva dátum a sor végén */}
                                                                             <span className="text-[10px] text-gray-400 font-medium">📅 {item.addedDate || 'Nincs'}</span>
                                                                         </div>
                                                                     </div>
@@ -681,9 +715,46 @@
                         {/* STATISZTIKA ÉS NAPLÓ NÉZET */}
                         {activeTab === 'stats' && (
                             <div className="space-y-4">
+                                {/* TOP 10 LEGTÖBBET FOGYÓ TERMÉK */}
+                                <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-100">
+                                    <h2 className="font-bold text-base mb-1 text-emerald-800 flex items-center gap-1.5">
+                                        <span>🔥</span> Top 10 Legtöbbet Fogyó Élelmiszer
+                                    </h2>
+                                    <p className="text-xs text-gray-500 mb-3">A spájzból a legtöbbször levont és felhasznált alapanyagok</p>
+
+                                    {topConsumedList.length === 0 ? (
+                                        <p className="text-xs text-gray-400 py-3 text-center">Még nincs rögzített fogyás. Amint elkezded csökkenteni a spájz tételeit a minusz (-) gombbal, itt fog megjelenni a statisztika!</p>
+                                    ) : (
+                                        <div className="space-y-2.5">
+                                            {topConsumedList.map((item, index) => {
+                                                const barPercentage = Math.min(100, Math.max(10, (item.count / maxConsumed) * 100));
+                                                return (
+                                                    <div key={item.name} className="space-y-1">
+                                                        <div className="flex justify-between items-center text-xs">
+                                                            <span className="font-bold text-gray-800">
+                                                                <span className="text-emerald-700 font-extrabold mr-1">#{index + 1}</span> {item.name}
+                                                            </span>
+                                                            <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                                                {item.count} db/alkalom fogyott
+                                                            </span>
+                                                        </div>
+                                                        <div className="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                                                            <div 
+                                                                className="h-full bg-gradient-to-r from-amber-400 to-orange-500 rounded-full transition-all duration-500" 
+                                                                style={{ width: `${barPercentage}%` }}
+                                                            ></div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* JELENLEGI KÉSZLET GRAFIKON KÁRTYA */}
                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                                    <h2 className="font-bold text-base mb-1 text-emerald-800">📊 Élelmiszer Készlet Grafikon</h2>
-                                    <p className="text-xs text-gray-500 mb-4">Jelenleg rendelkezésre álló élelmiszer mennyiségek</p>
+                                    <h2 className="font-bold text-base mb-1 text-emerald-800">📊 Jelenlegi Készlet Diagram</h2>
+                                    <p className="text-xs text-gray-500 mb-4">Rendelkezésre álló mennyiségek</p>
 
                                     {items.length === 0 ? (
                                         <p className="text-xs text-gray-400 py-4 text-center">Nincs elérhető adat a diagramhoz.</p>
@@ -717,6 +788,7 @@
                                     )}
                                 </div>
 
+                                {/* KATEGÓRIÁNKÉNTI ÖSSZESÍTÉS */}
                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 text-xs space-y-2">
                                     <h3 className="font-bold text-gray-700 uppercase tracking-wider text-[11px] mb-2">🏷️ Készlet eloszlása kategóriák szerint</h3>
                                     {Object.keys(categoryCounts).length === 0 ? (
@@ -737,6 +809,7 @@
                                     )}
                                 </div>
 
+                                {/* EREDETI ESEMÉNYNAPLÓ */}
                                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
                                     <h2 className="font-bold text-sm mb-3 text-emerald-800">📝 Eseménynapló</h2>
                                     <div className="space-y-2 max-h-60 overflow-y-auto">

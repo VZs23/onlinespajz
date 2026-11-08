@@ -22,7 +22,6 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // A saját Firebase konfigurációd beillesztve:
         const firebaseConfig = {
             apiKey: "AIzaSyDXqUKm9hYzixLWstoxcg3994N9qR94iPU",
             authDomain: "onlinespajz.firebaseapp.com",
@@ -41,6 +40,7 @@
         function App() {
             const [activeTab, setActiveTab] = React.useState('inventory');
             const [expandedItemId, setExpandedItemId] = React.useState(null);
+            const [editingItemId, setEditingItemId] = React.useState(null);
             
             const [items, setItems] = React.useState([]);
             const [customShoppingItems, setCustomShoppingItems] = React.useState([]);
@@ -52,20 +52,33 @@
             // Új spájz tétel state
             const [newName, setNewName] = React.useState('');
             const [newCategory, setNewCategory] = React.useState('Alapanyag');
+            const [customCategoryInput, setCustomCategoryInput] = React.useState('');
+            
             const [newQty, setNewQty] = React.useState(1);
             const [newUnit, setNewUnit] = React.useState('db');
+            const [customUnitInput, setCustomUnitInput] = React.useState('');
+
             const [newMin, setNewMin] = React.useState(1);
             const [newExpiry, setNewExpiry] = React.useState('');
             const [newAutoShopping, setNewAutoShopping] = React.useState(true);
 
-            // Új egyedi bevásárlólista tétel state
+            // Szerkesztési state-ek
+            const [editName, setEditName] = React.useState('');
+            const [editCategory, setEditCategory] = React.useState('');
+            const [editExpiry, setEditExpiry] = React.useState('');
+            const [editMin, setEditMin] = React.useState(1);
+            const [editUnit, setEditUnit] = React.useState('');
+
+            // Egyedi bevásárlólista state
             const [customName, setCustomName] = React.useState('');
             const [customNote, setCustomNote] = React.useState('');
             const [showAddCustom, setShowAddCustom] = React.useState(false);
 
-            const categories = ['Összes', 'Alapanyag', 'Folyadék', 'Hűtő', 'Fagyasztó', 'Egyéb'];
+            const [defaultCategories, setDefaultCategories] = React.useState(['Alapanyag', 'Folyadék', 'Hűtő', 'Fagyasztó', 'Egyéb']);
+            const defaultUnits = ['db', 'kg', 'dkg', 'liter', 'csomag'];
 
-            // ÉLŐ FELHŐ ADATBÁZIS SZINKRONIZÁCIÓ
+            const allCategories = ['Összes', ...Array.from(new Set([...defaultCategories, ...items.map(i => i.category).filter(Boolean)]))];
+
             React.useEffect(() => {
                 const unsubscribeItems = db.collection('spajz_items').onSnapshot(snapshot => {
                     const loadedItems = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -89,34 +102,89 @@
                 };
             }, []);
 
-            // Spájz tétel mentése a felhőbe
+            const handleNameChange = (val) => {
+                setNewName(val);
+                const lower = val.toLowerCase();
+                const today = new Date();
+
+                let daysToAdd = null;
+                if (lower.includes('tej') || lower.includes('tartós tej')) {
+                    daysToAdd = 7;
+                } else if (lower.includes('hús') || lower.includes('csirke') || lower.includes('darálthús')) {
+                    daysToAdd = 2;
+                } else if (lower.includes('kenyér') || lower.includes('péksüti')) {
+                    daysToAdd = 4;
+                } else if (lower.includes('tojás')) {
+                    daysToAdd = 21;
+                }
+
+                if (daysToAdd !== null) {
+                    today.setDate(today.getDate() + daysToAdd);
+                    setNewExpiry(today.toISOString().split('T')[0]);
+                }
+            };
+
             const handleAddItem = async (e) => {
                 e.preventDefault();
                 if (!newName.trim()) return;
+
+                const finalCategory = newCategory === 'Saját kategória...' ? (customCategoryInput.trim() || 'Egyéb') : newCategory;
+                const finalUnit = newUnit === 'Saját mértékegység...' ? (customUnitInput.trim() || 'db') : newUnit;
+
                 const today = new Date().toISOString().split('T')[0];
                 const newItem = {
                     name: newName,
-                    category: newCategory,
+                    category: finalCategory,
                     qty: Number(newQty),
-                    unit: newUnit,
+                    unit: finalUnit,
                     min: Number(newMin),
                     autoShopping: newAutoShopping,
                     addedDate: today,
                     expiryDate: newExpiry
                 };
+
                 await db.collection('spajz_items').add(newItem);
                 await db.collection('spajz_logs').add({ 
-                    text: `Hozzáadva a spájzhoz: ${newName}`, 
+                    text: `Hozzáadva a spájzhoz: ${newName} (${newItem.qty} ${newItem.unit})`, 
                     date: new Date().toLocaleDateString(), 
                     timestamp: Date.now() 
                 });
                 
                 setNewName('');
                 setNewExpiry('');
+                setCustomCategoryInput('');
+                setCustomUnitInput('');
                 setActiveTab('inventory');
             };
 
-            // Egyedi bevásárlólista tétel mentése a felhőbe
+            // Szerkesztés megkezdése
+            const startEditing = (item) => {
+                setEditingItemId(item.id);
+                setEditName(item.name || '');
+                setEditCategory(item.category || 'Alapanyag');
+                setEditExpiry(item.expiryDate || '');
+                setEditMin(item.min || 1);
+                setEditUnit(item.unit || 'db');
+            };
+
+            // Szerkesztett adatok mentése a felhőbe
+            const saveEdit = async (id) => {
+                if (!editName.trim()) return;
+                await db.collection('spajz_items').doc(id).update({
+                    name: editName,
+                    category: editCategory,
+                    expiryDate: editExpiry,
+                    min: Number(editMin),
+                    unit: editUnit
+                });
+                await db.collection('spajz_logs').add({ 
+                    text: `Módosítva a spájzban: ${editName}`, 
+                    date: new Date().toLocaleDateString(), 
+                    timestamp: Date.now() 
+                });
+                setEditingItemId(null);
+            };
+
             const handleAddCustomShopping = async (e) => {
                 e.preventDefault();
                 if (!customName.trim()) return;
@@ -130,7 +198,6 @@
                 setShowAddCustom(false);
             };
 
-            // Mennyiség állítása a felhőben
             const updateQty = async (id, delta) => {
                 const item = items.find(i => i.id === id);
                 if (!item) return;
@@ -138,7 +205,6 @@
                 await db.collection('spajz_items').doc(id).update({ qty: newQty });
             };
 
-            // Törlések a felhőből
             const deletePantryItem = async (id, name) => {
                 if (confirm(`Biztosan törölni szeretnéd ezt a tételt: ${name}?`)) {
                     await db.collection('spajz_items').doc(id).delete();
@@ -155,6 +221,7 @@
             };
 
             const lowStockItems = items.filter(i => i.qty <= i.min && i.autoShopping);
+            const todayStr = new Date().toISOString().split('T')[0];
 
             return (
                 <div className="max-w-md mx-auto p-4 min-h-screen flex flex-col justify-between">
@@ -173,7 +240,7 @@
                         {/* Figyelmeztető sáv */}
                         {(lowStockItems.length > 0 || customShoppingItems.length > 0) && (
                             <div className="bg-amber-50 border-l-4 border-amber-500 p-3 rounded-xl mb-4 shadow-sm text-xs text-amber-800 flex justify-between items-center">
-                                <span><span className="font-bold">⚠️ Bevásárlólista:</span> {lowStockItems.length + customShoppingItems.length} tétel van a listán!</span>
+                                <span><span className="font-bold">⚠️ Bevásárlólista:</span> {lowStockItems.length + customShoppingItems.length} tétel vár megvételre!</span>
                                 <button onClick={() => setActiveTab('shopping')} className="font-bold underline text-amber-900">Megnézem</button>
                             </div>
                         )}
@@ -192,7 +259,7 @@
                                 </div>
 
                                 <div className="flex gap-1.5 overflow-x-auto pb-2 mb-3">
-                                    {categories.map(cat => (
+                                    {allCategories.map(cat => (
                                         <button
                                             key={cat}
                                             onClick={() => setSelectedCategory(cat)}
@@ -215,46 +282,99 @@
                                             .filter(i => i.name && i.name.toLowerCase().includes(searchTerm.toLowerCase()))
                                             .map(item => {
                                                 const isExpanded = expandedItemId === item.id;
+                                                const isEditing = editingItemId === item.id;
+                                                const isExpired = item.expiryDate && item.expiryDate < todayStr;
+                                                
                                                 return (
-                                                    <div key={item.id} className="bg-white p-3.5 rounded-xl shadow-sm border border-gray-100">
-                                                        <div className="flex justify-between items-center">
-                                                            <div className="cursor-pointer flex-1" onClick={() => setExpandedItemId(isExpanded ? null : item.id)}>
-                                                                <div className="flex items-center gap-2">
-                                                                    <h3 className="font-semibold text-sm">{item.name}</h3>
-                                                                    <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">{item.category}</span>
+                                                    <div key={item.id} className={`p-3.5 rounded-xl shadow-sm border ${isExpired ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'}`}>
+                                                        
+                                                        {/* SZERKESZTŐ NÉZET */}
+                                                        {isEditing ? (
+                                                            <div className="space-y-3 bg-emerald-50/50 p-2.5 rounded-lg border border-emerald-200">
+                                                                <h4 className="text-xs font-bold text-emerald-800">✏️ Tétel szerkesztése</h4>
+                                                                <div>
+                                                                    <label className="text-[10px] text-gray-500 block">Név</label>
+                                                                    <input type="text" value={editName} onChange={e => setEditName(e.target.value)} className="w-full p-2 border rounded-lg text-xs" />
                                                                 </div>
-                                                                <p className="text-xs text-gray-500 mt-1">
-                                                                    Készlet: <span className={item.qty <= 0 ? "text-red-600 font-bold" : item.qty <= item.min ? "text-amber-600 font-bold" : "text-emerald-600 font-bold"}>
-                                                                        {item.qty} {item.unit}
-                                                                    </span> (Min: {item.min})
-                                                                </p>
+                                                                <div className="grid grid-cols-2 gap-2">
+                                                                    <div>
+                                                                        <label className="text-[10px] text-gray-500 block">Kategória</label>
+                                                                        <input type="text" value={editCategory} onChange={e => setEditCategory(e.target.value)} className="w-full p-2 border rounded-lg text-xs" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="text-[10px] text-gray-500 block">Mértékegység</label>
+                                                                        <input type="text" value={editUnit} onChange={e => setEditUnit(e.target.value)} className="w-full p-2 border rounded-lg text-xs" />
+                                                                    </div>
+                                                                </div>
+                                                                <div className="grid grid-cols-2 gap-2">
+                                                                    <div>
+                                                                        <label className="text-[10px] text-gray-500 block">Lejárati dátum</label>
+                                                                        <input type="date" value={editExpiry} onChange={e => setEditExpiry(e.target.value)} className="w-full p-2 border rounded-lg text-xs bg-white" />
+                                                                    </div>
+                                                                    <div>
+                                                                        <label className="text-[10px] text-gray-500 block">Min. készlet</label>
+                                                                        <input type="number" min="0" value={editMin} onChange={e => setEditMin(e.target.value)} className="w-full p-2 border rounded-lg text-xs" />
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex gap-2 pt-1">
+                                                                    <button onClick={() => saveEdit(item.id)} className="flex-1 bg-emerald-600 text-white text-xs py-1.5 rounded-lg font-bold">Mentés</button>
+                                                                    <button onClick={() => setEditingItemId(null)} className="flex-1 bg-gray-200 text-gray-700 text-xs py-1.5 rounded-lg">Mégse</button>
+                                                                </div>
                                                             </div>
+                                                        ) : (
+                                                            /* NORMÁL NÉZET */
+                                                            <div>
+                                                                <div className="flex justify-between items-center">
+                                                                    <div className="cursor-pointer flex-1" onClick={() => setExpandedItemId(isExpanded ? null : item.id)}>
+                                                                        <div className="flex items-center gap-2">
+                                                                            <h3 className="font-semibold text-sm">{item.name}</h3>
+                                                                            <button onClick={(e) => { e.stopPropagation(); startEditing(item); }} className="text-gray-400 hover:text-emerald-700 p-0.5 text-xs" title="Szerkesztés">
+                                                                                ✏️
+                                                                            </button>
+                                                                            <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">{item.category}</span>
+                                                                            {isExpired && (
+                                                                                <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-md font-bold animate-pulse">LEJÁRT!</span>
+                                                                            )}
+                                                                        </div>
+                                                                        <p className="text-xs text-gray-500 mt-1">
+                                                                            Készlet: <span className={item.qty <= 0 ? "text-red-600 font-bold" : item.qty <= item.min ? "text-amber-600 font-bold" : "text-emerald-600 font-bold"}>
+                                                                                {item.qty} {item.unit}
+                                                                            </span> (Min: {item.min})
+                                                                        </p>
+                                                                    </div>
 
-                                                            <div className="flex items-center gap-1.5">
-                                                                <button onClick={() => updateQty(item.id, -1)} className="bg-gray-100 w-8 h-8 rounded-lg font-bold flex items-center justify-center hover:bg-gray-200">-</button>
-                                                                <button onClick={() => updateQty(item.id, 1)} className="bg-emerald-100 text-emerald-800 w-8 h-8 rounded-lg font-bold flex items-center justify-center hover:bg-emerald-200">+</button>
-                                                            </div>
-                                                        </div>
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <button onClick={() => updateQty(item.id, -1)} className="bg-gray-100 w-8 h-8 rounded-lg font-bold flex items-center justify-center hover:bg-gray-200">-</button>
+                                                                        <button onClick={() => updateQty(item.id, 1)} className="bg-emerald-100 text-emerald-800 w-8 h-8 rounded-lg font-bold flex items-center justify-center hover:bg-emerald-200">+</button>
+                                                                    </div>
+                                                                </div>
 
-                                                        <button onClick={() => setExpandedItemId(isExpanded ? null : item.id)} className="mt-2 text-[11px] text-emerald-700 font-medium">
-                                                            {isExpanded ? '▲ Dátumok elrejtése' : '▼ Dátumok & Lejárat megtekintése'}
-                                                        </button>
+                                                                <button onClick={() => setExpandedItemId(isExpanded ? null : item.id)} className="mt-2 text-[11px] text-emerald-700 font-medium">
+                                                                    {isExpanded ? '▲ Részletek elrejtése' : '▼ Lejárat & Dátumok megtekintése'}
+                                                                </button>
 
-                                                        {isExpanded && (
-                                                            <div className="mt-3 pt-3 border-t border-gray-100 bg-gray-50 p-2.5 rounded-lg text-xs space-y-2">
-                                                                <div className="flex justify-between text-gray-600">
-                                                                    <span>Hozzáadva:</span>
-                                                                    <span className="font-semibold">{item.addedDate || 'Nincs'}</span>
-                                                                </div>
-                                                                <div className="flex justify-between text-gray-600">
-                                                                    <span>Lejárat:</span>
-                                                                    <span className="font-semibold text-red-600">{item.expiryDate || 'Nincs beállítva'}</span>
-                                                                </div>
-                                                                <div className="pt-2 flex justify-end">
-                                                                    <button onClick={() => deletePantryItem(item.id, item.name)} className="bg-red-100 text-red-700 px-3 py-1 rounded-md text-xs font-medium hover:bg-red-200">
-                                                                        🗑️ Tétel törlése
-                                                                    </button>
-                                                                </div>
+                                                                {isExpanded && (
+                                                                    <div className="mt-3 pt-3 border-t border-gray-100 bg-white/60 p-2.5 rounded-lg text-xs space-y-2">
+                                                                        <div className="flex justify-between text-gray-600">
+                                                                            <span>Hozzáadva:</span>
+                                                                            <span className="font-semibold">{item.addedDate || 'Nincs'}</span>
+                                                                        </div>
+                                                                        <div className="flex justify-between text-gray-600">
+                                                                            <span>Lejárati dátum:</span>
+                                                                            <span className={`font-semibold ${isExpired ? 'text-red-600 font-bold text-sm' : 'text-gray-800'}`}>
+                                                                                {item.expiryDate || 'Nincs beállítva'} {isExpired ? '⚠️' : ''}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="pt-2 flex justify-between items-center">
+                                                                            <button onClick={() => startEditing(item)} className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-md text-xs font-medium border border-emerald-200">
+                                                                                ✏️ Szerkesztés
+                                                                            </button>
+                                                                            <button onClick={() => deletePantryItem(item.id, item.name)} className="bg-red-100 text-red-700 px-3 py-1 rounded-md text-xs font-medium hover:bg-red-200">
+                                                                                🗑️ Tétel törlése
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         )}
                                                     </div>
@@ -333,15 +453,21 @@
                                 <h2 className="font-bold text-base mb-3 text-emerald-800">➕ Új tétel rögzítése</h2>
                                 <form onSubmit={handleAddItem} className="space-y-3">
                                     <div>
-                                        <label className="block text-xs font-medium text-gray-600 mb-1">Tétel neve</label>
-                                        <input type="text" required placeholder="pl. Liszt, Tej..." value={newName} onChange={e => setNewName(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm" />
+                                        <label className="block text-xs font-medium text-gray-600 mb-1">Tétel neve (pl. Tartós tej, Hús...)</label>
+                                        <input type="text" required placeholder="pl. Tej..." value={newName} onChange={e => handleNameChange(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm" />
                                     </div>
+
                                     <div>
                                         <label className="block text-xs font-medium text-gray-600 mb-1">Kategória</label>
-                                        <select value={newCategory} onChange={e => setNewCategory(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white">
-                                            {categories.filter(c => c !== 'Összes').map(c => <option key={c} value={c}>{c}</option>)}
+                                        <select value={newCategory} onChange={e => setNewCategory(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white mb-1.5">
+                                            {defaultCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                                            <option value="Saját kategória...">+ Saját kategória beírása...</option>
                                         </select>
+                                        {newCategory === 'Saját kategória...' && (
+                                            <input type="text" placeholder="Írd be a saját kategóriát..." required value={customCategoryInput} onChange={e => setCustomCategoryInput(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-emerald-50" />
+                                        )}
                                     </div>
+
                                     <div className="grid grid-cols-2 gap-2">
                                         <div>
                                             <label className="block text-xs font-medium text-gray-600 mb-1">Mennyiség</label>
@@ -349,29 +475,32 @@
                                         </div>
                                         <div>
                                             <label className="block text-xs font-medium text-gray-600 mb-1">Mértékegység</label>
-                                            <select value={newUnit} onChange={e => setNewUnit(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white">
-                                                <option value="kg">kg</option>
-                                                <option value="dkg">dkg</option>
-                                                <option value="liter">liter</option>
-                                                <option value="db">db</option>
-                                                <option value="csomag">csomag</option>
+                                            <select value={newUnit} onChange={e => setNewUnit(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white mb-1">
+                                                {defaultUnits.map(u => <option key={u} value={u}>{u}</option>)}
+                                                <option value="Saját mértékegység...">+ Saját...</option>
                                             </select>
+                                            {newUnit === 'Saját mértékegység...' && (
+                                                <input type="text" placeholder="pl. doboz, üveg" required value={customUnitInput} onChange={e => setCustomUnitInput(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-emerald-50 mt-1" />
+                                            )}
                                         </div>
                                     </div>
+
                                     <div className="grid grid-cols-2 gap-2">
                                         <div>
                                             <label className="block text-xs font-medium text-gray-600 mb-1">Min. készlet</label>
                                             <input type="number" min="0" value={newMin} onChange={e => setNewMin(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm" />
                                         </div>
                                         <div>
-                                            <label className="block text-xs font-medium text-gray-600 mb-1">Lejárat (Opcionális)</label>
+                                            <label className="block text-xs font-medium text-gray-600 mb-1">Lejárati dátum</label>
                                             <input type="date" value={newExpiry} onChange={e => setNewExpiry(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white" />
                                         </div>
                                     </div>
+
                                     <div className="flex items-center gap-2 p-3 bg-gray-50 rounded-xl border border-gray-200">
                                         <input type="checkbox" id="autoShopping" checked={newAutoShopping} onChange={e => setNewAutoShopping(e.target.checked)} className="w-4 h-4 text-emerald-600 rounded" />
                                         <label htmlFor="autoShopping" className="text-xs text-gray-700 cursor-pointer">Kerüljön a bevásárlólistára, ha kevés van belőle</label>
                                     </div>
+
                                     <button type="submit" className="w-full bg-emerald-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-700 mt-2">Mentés a felhőbe</button>
                                 </form>
                             </div>
@@ -380,7 +509,7 @@
                         {/* NAPLÓ NÉZET */}
                         {activeTab === 'stats' && (
                             <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
-                                <h2 className="font-bold text-base mb-3 text-emerald-800">📊 Napló</h2>
+                               <h2 className="font-bold text-base mb-3 text-emerald-800">📊 Napló</h2>
                                 <div className="space-y-2">
                                     {logs.length === 0 ? (
                                         <p className="text-xs text-gray-400">Még nincs rögzített naplóbejegyzés.</p>

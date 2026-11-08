@@ -47,8 +47,8 @@
             const [logs, setLogs] = React.useState([]);
 
             const [searchTerm, setSearchTerm] = React.useState('');
-            const [storageFilter, setStorageFilter] = React.useState('Összes'); // Első sor szűrő
-            const [selectedCategory, setSelectedCategory] = React.useState('Összes'); // Második sor szűrő
+            const [storageFilter, setStorageFilter] = React.useState('Összes');
+            const [selectedCategory, setSelectedCategory] = React.useState('Összes');
 
             // Új spájz tétel state
             const [newName, setNewName] = React.useState('');
@@ -56,18 +56,21 @@
             const [customCategoryInput, setCustomCategoryInput] = React.useState('');
             
             const [newStorage, setNewStorage] = React.useState('Kamra');
+            const [customStorageInput, setCustomStorageInput] = React.useState('');
+
             const [newQty, setNewQty] = React.useState(1);
             const [newUnit, setNewUnit] = React.useState('db');
             const [customUnitInput, setCustomUnitInput] = React.useState('');
 
             const [newMin, setNewMin] = React.useState(1);
-            const [newExpiry, setNewExpiry] = React.useState(''); // Üresen hagyható
+            const [newExpiry, setNewExpiry] = React.useState('');
             const [newAutoShopping, setNewAutoShopping] = React.useState(true);
 
             // Szerkesztési state-ek
             const [editName, setEditName] = React.useState('');
             const [editCategory, setEditCategory] = React.useState('');
             const [editStorage, setEditStorage] = React.useState('Kamra');
+            const [editCustomStorageInput, setEditCustomStorageInput] = React.useState('');
             const [editExpiry, setEditExpiry] = React.useState('');
             const [editMin, setEditMin] = React.useState(1);
             const [editUnit, setEditUnit] = React.useState('');
@@ -79,9 +82,22 @@
 
             const [defaultCategories] = React.useState(['Alapanyag', 'Folyadék', 'Hűtő', 'Fagyasztó', 'Egyéb']);
             const defaultUnits = ['db', 'kg', 'dkg', 'liter', 'csomag'];
-            const storageLocations = ['Kamra', 'Hűtő', 'Mélyhűtő'];
+            const defaultStorageLocations = ['Kamra', 'Hűtő', 'Mélyhűtő', 'Pince'];
 
+            const allStorageLocations = ['Összes', ...Array.from(new Set([...defaultStorageLocations, ...items.map(i => i.storage).filter(Boolean)]))];
             const allCategories = ['Összes', ...Array.from(new Set([...defaultCategories, ...items.map(i => i.category).filter(Boolean)]))];
+
+            // Tárolóhelyekhez tartozó ikonok segédfüggvénye
+            const getStorageIcon = (storageName) => {
+                switch(storageName) {
+                    case 'Kamra': return '🏠';
+                    case 'Hűtő': return '❄️';
+                    case 'Mélyhűtő': return '🧊';
+                    case 'Pince': return '🍷';
+                    case 'Összes': return '📦';
+                    default: return '📍';
+                }
+            };
 
             const expiryGuide = [
                 { name: 'Tej (friss)', cycle: '3 - 7 nap (Hűtőben)' },
@@ -123,6 +139,7 @@
                 e.preventDefault();
                 if (!newName.trim()) return;
 
+                const finalStorage = newStorage === 'Saját tárolóhely...' ? (customStorageInput.trim() || 'Kamra') : newStorage;
                 const finalCategory = newCategory === 'Saját kategória...' ? (customCategoryInput.trim() || 'Egyéb') : newCategory;
                 const finalUnit = newUnit === 'Saját mértékegység...' ? (customUnitInput.trim() || 'db') : newUnit;
 
@@ -130,24 +147,25 @@
                 const newItem = {
                     name: newName,
                     category: finalCategory,
-                    storage: newStorage,
+                    storage: finalStorage,
                     qty: Number(newQty),
                     unit: finalUnit,
                     min: Number(newMin),
                     autoShopping: newAutoShopping,
                     addedDate: today,
-                    expiryDate: newExpiry // Ha üres, üres marad
+                    expiryDate: newExpiry
                 };
 
                 await db.collection('spajz_items').add(newItem);
                 await db.collection('spajz_logs').add({ 
-                    text: `Hozzáadva [${newStorage}]: ${newName} (${newItem.qty} ${newItem.unit})`, 
+                    text: `Hozzáadva [${finalStorage}]: ${newName} (${newItem.qty} ${newItem.unit})`, 
                     date: new Date().toLocaleDateString(), 
                     timestamp: Date.now() 
                 });
                 
                 setNewName('');
                 setNewExpiry('');
+                setCustomStorageInput('');
                 setCustomCategoryInput('');
                 setCustomUnitInput('');
                 setActiveTab('inventory');
@@ -157,7 +175,15 @@
                 setEditingItemId(item.id);
                 setEditName(item.name || '');
                 setEditCategory(item.category || 'Alapanyag');
-                setEditStorage(item.storage || 'Kamra');
+                
+                if (defaultStorageLocations.includes(item.storage)) {
+                    setEditStorage(item.storage || 'Kamra');
+                    setEditCustomStorageInput('');
+                } else {
+                    setEditStorage('Saját tárolóhely...');
+                    setEditCustomStorageInput(item.storage || '');
+                }
+
                 setEditExpiry(item.expiryDate || '');
                 setEditMin(item.min || 1);
                 setEditUnit(item.unit || 'db');
@@ -165,10 +191,12 @@
 
             const saveEdit = async (id) => {
                 if (!editName.trim()) return;
+                const finalEditStorage = editStorage === 'Saját tárolóhely...' ? (editCustomStorageInput.trim() || 'Kamra') : editStorage;
+
                 await db.collection('spajz_items').doc(id).update({
                     name: editName,
                     category: editCategory,
-                    storage: editStorage,
+                    storage: finalEditStorage,
                     expiryDate: editExpiry,
                     min: Number(editMin),
                     unit: editUnit
@@ -256,15 +284,15 @@
 
                                 {/* Két soros szűrőrendszer */}
                                 <div className="space-y-1.5 mb-3">
-                                    {/* 1. Sor: Összes és Tárolóhelyek */}
-                                    <div className="flex gap-1.5">
-                                        {['Összes', ...storageLocations].map(loc => (
+                                    {/* 1. Sor: Tárolóhelyek egyedi ikonokkal */}
+                                    <div className="flex gap-1.5 overflow-x-auto pb-1">
+                                        {allStorageLocations.map(loc => (
                                             <button
                                                 key={loc}
                                                 onClick={() => setStorageFilter(loc)}
-                                                className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${storageFilter === loc ? 'bg-emerald-700 text-white shadow-sm' : 'bg-gray-200 text-gray-700'}`}
+                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${storageFilter === loc ? 'bg-emerald-700 text-white shadow-sm' : 'bg-gray-200 text-gray-700'}`}
                                             >
-                                                {loc === 'Összes' ? '📦 Összes' : (loc === 'Kamra' ? '🏠 Kamra' : (loc === 'Hűtő' ? '❄️ Hűtő' : '🧊 Mélyhűtő'))}
+                                                {getStorageIcon(loc)} {loc}
                                             </button>
                                         ))}
                                     </div>
@@ -297,7 +325,6 @@
                                             .map(item => {
                                                 const isExpanded = expandedItemId === item.id;
                                                 const isEditing = editingItemId === item.id;
-                                                // Csak akkor jelöljük lejártnak, ha van megadott lejárati dátum ÉS az kisebb, mint a mai nap
                                                 const isExpired = item.expiryDate && item.expiryDate.trim() !== '' && item.expiryDate < todayStr;
                                                 const isOutOfStock = item.qty <= 0;
                                                 
@@ -322,9 +349,13 @@
                                                                 <div className="grid grid-cols-2 gap-2">
                                                                     <div>
                                                                         <label className="text-[10px] text-gray-500 block">Tárolóhely</label>
-                                                                        <select value={editStorage} onChange={e => setEditStorage(e.target.value)} className="w-full p-2 border rounded-lg text-xs bg-white">
-                                                                            {storageLocations.map(s => <option key={s} value={s}>{s}</option>)}
+                                                                        <select value={editStorage} onChange={e => setEditStorage(e.target.value)} className="w-full p-2 border rounded-lg text-xs bg-white mb-1">
+                                                                            {defaultStorageLocations.map(s => <option key={s} value={s}>{getStorageIcon(s)} {s}</option>)}
+                                                                            <option value="Saját tárolóhely...">+ Saját...</option>
                                                                         </select>
+                                                                        {editStorage === 'Saját tárolóhely...' && (
+                                                                            <input type="text" placeholder="Saját tároló..." required value={editCustomStorageInput} onChange={e => setEditCustomStorageInput(e.target.value)} className="w-full p-2 border rounded-lg text-xs bg-emerald-50" />
+                                                                        )}
                                                                     </div>
                                                                     <div>
                                                                         <label className="text-[10px] text-gray-500 block">Mértékegység</label>
@@ -333,7 +364,7 @@
                                                                 </div>
                                                                 <div className="grid grid-cols-2 gap-2">
                                                                     <div>
-                                                                        <label className="text-[10px] text-gray-500 block">Lejárati dátum (üresen hagyható)</label>
+                                                                        <label className="text-[10px] text-gray-500 block">Lejárati dátum</label>
                                                                         <input type="date" value={editExpiry} onChange={e => setEditExpiry(e.target.value)} className="w-full p-2 border rounded-lg text-xs bg-white" />
                                                                     </div>
                                                                     <div>
@@ -356,7 +387,7 @@
                                                                             <button onClick={(e) => { e.stopPropagation(); startEditing(item); }} className="text-gray-400 hover:text-emerald-700 p-0.5 text-xs" title="Szerkesztés">
                                                                                 ✏️
                                                                             </button>
-                                                                            <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-medium">📍 {item.storage || 'Kamra'}</span>
+                                                                            <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-medium">{getStorageIcon(item.storage)} {item.storage || 'Kamra'}</span>
                                                                             <span className="text-[10px] bg-gray-100 text-gray-600 px-2 py-0.5 rounded-md">{item.category}</span>
                                                                             {isExpired && (
                                                                                 <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-md font-bold animate-pulse">LEJÁRT!</span>
@@ -490,22 +521,25 @@
                                         <div className="grid grid-cols-2 gap-2">
                                             <div>
                                                 <label className="block text-xs font-medium text-gray-600 mb-1">Tárolóhely</label>
-                                                <select value={newStorage} onChange={e => setNewStorage(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white">
-                                                    {storageLocations.map(s => <option key={s} value={s}>{s}</option>)}
+                                                <select value={newStorage} onChange={e => setNewStorage(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white mb-1">
+                                                    {defaultStorageLocations.map(s => <option key={s} value={s}>{getStorageIcon(s)} {s}</option>)}
+                                                    <option value="Saját tárolóhely...">+ Saját...</option>
                                                 </select>
+                                                {newStorage === 'Saját tárolóhely...' && (
+                                                    <input type="text" placeholder="Írd be a tárolót..." required value={customStorageInput} onChange={e => setCustomStorageInput(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-emerald-50 mt-1" />
+                                                )}
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-medium text-gray-600 mb-1">Kategória</label>
-                                                <select value={newCategory} onChange={e => setNewCategory(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white">
+                                                <select value={newCategory} onChange={e => setNewCategory(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-white mb-1">
                                                     {defaultCategories.map(c => <option key={c} value={c}>{c}</option>)}
                                                     <option value="Saját kategória...">+ Saját...</option>
                                                 </select>
+                                                {newCategory === 'Saját kategória...' && (
+                                                    <input type="text" placeholder="Írd be a kategóriát..." required value={customCategoryInput} onChange={e => setCustomCategoryInput(e.target.value)} className="w-full p-2.5 border rounded-xl text-xs bg-emerald-50 mt-1" />
+                                                )}
                                             </div>
                                         </div>
-
-                                        {newCategory === 'Saját kategória...' && (
-                                            <input type="text" placeholder="Írd be a saját kategóriát..." required value={customCategoryInput} onChange={e => setCustomCategoryInput(e.target.value)} className="w-full p-2.5 border rounded-xl text-sm bg-emerald-50" />
-                                        )}
 
                                         <div className="grid grid-cols-2 gap-2">
                                             <div>

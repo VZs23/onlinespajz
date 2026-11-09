@@ -42,13 +42,14 @@
             const [expandedItemId, setExpandedItemId] = React.useState(null);
             const [editingItemId, setEditingItemId] = React.useState(null);
             
-            // Sötét mód state (alapból világos, vagy mentett beállítás)
             const [darkMode, setDarkMode] = React.useState(() => {
                 return localStorage.getItem('spajz_dark_mode') === 'true';
             });
 
             const [items, setItems] = React.useState([]);
             const [customShoppingItems, setCustomShoppingItems] = React.useState([]);
+            const [shoppingLists, setShoppingLists] = React.useState([]);
+            const [activeListId, setActiveListId] = React.useState('default');
             const [logs, setLogs] = React.useState([]);
 
             const [searchTerm, setSearchTerm] = React.useState('');
@@ -57,6 +58,11 @@
             const [sortBy, setSortBy] = React.useState('newest');
 
             const [showQuickAdd, setShowQuickAdd] = React.useState(false);
+            const [showNewListModal, setShowNewListModal] = React.useState(false);
+
+            // Új lista state
+            const [newListName, setNewListName] = React.useState('');
+            const [newListType, setNewListType] = React.useState('pantry'); // 'pantry' vagy 'simple'
 
             // Új spájz tétel state
             const [newName, setNewName] = React.useState('');
@@ -84,9 +90,12 @@
             const [editMin, setEditMin] = React.useState(1);
             const [editUnit, setEditUnit] = React.useState('');
 
-            // Egyedi bevásárlólista state
+            // Egyedi bevásárlólista tétel state
             const [customName, setCustomName] = React.useState('');
-            const [customNote, setCustomNote] = React.useState('');
+            const [customQty, setCustomQty] = React.useState(1);
+            const [customUnit, setCustomUnit] = React.useState('db');
+            const [customTargetStorage, setCustomTargetStorage] = React.useState('Kamra');
+            const [customTargetCategory, setCustomTargetCategory] = React.useState('Alapanyag');
             const [showAddCustom, setShowAddCustom] = React.useState(false);
 
             const [defaultCategories] = React.useState(['Alapanyag', 'Folyadék', 'Hűtő', 'Fagyasztó', 'Egyéb']);
@@ -137,6 +146,16 @@
                     setCustomShoppingItems(loadedShopping);
                 });
 
+                const unsubscribeLists = db.collection('spajz_lists').onSnapshot(snapshot => {
+                    const loadedLists = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    if (loadedLists.length === 0) {
+                        // Alapértelmezett listák létrehozása, ha még nincsenek
+                        db.collection('spajz_lists').doc('default').set({ name: '🛒 Fő Bevásárlólista (Spájzba)', type: 'pantry' });
+                        db.collection('spajz_lists').doc('simple').set({ name: '📝 Sima lista (Nem spájz)', type: 'simple' });
+                    }
+                    setShoppingLists(loadedLists);
+                });
+
                 const unsubscribeLogs = db.collection('spajz_logs').onSnapshot(snapshot => {
                     const loadedLogs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                     setLogs(loadedLogs.sort((a, b) => b.timestamp - a.timestamp));
@@ -145,6 +164,7 @@
                 return () => {
                     unsubscribeItems();
                     unsubscribeShopping();
+                    unsubscribeLists();
                     unsubscribeLogs();
                 };
             }, []);
@@ -156,6 +176,29 @@
                 setNewStorage(targetStorage);
                 setNewCategory(targetCategory);
                 setShowQuickAdd(!showQuickAdd);
+            };
+
+            const handleCreateList = async (e) => {
+                e.preventDefault();
+                if (!newListName.trim()) return;
+                await db.collection('spajz_lists').add({
+                    name: newListName,
+                    type: newListType,
+                    timestamp: Date.now()
+                });
+                setNewListName('');
+                setShowNewListModal(false);
+            };
+
+            const deleteList = async (listId, listName) => {
+                if (confirm(`Biztosan törölni szeretnéd a(z) "${listName}" listát és a hozzá tartozó tételeket?`)) {
+                    await db.collection('spajz_lists').doc(listId).delete();
+                    const itemsToDelete = customShoppingItems.filter(i => (i.listId || 'default') === listId);
+                    itemsToDelete.forEach(async (item) => {
+                        await db.collection('spajz_custom_shopping').doc(item.id).delete();
+                    });
+                    setActiveListId('default');
+                }
             };
 
             const handleAddItem = async (e) => {
@@ -245,14 +288,63 @@
             const handleAddCustomShopping = async (e) => {
                 e.preventDefault();
                 if (!customName.trim()) return;
+                
                 await db.collection('spajz_custom_shopping').add({ 
                     name: customName, 
-                    note: customNote, 
+                    qty: Number(customQty) || 1,
+                    unit: customUnit || 'db',
+                    storage: customTargetStorage || 'Kamra',
+                    category: customTargetCategory || 'Alapanyag',
+                    listId: activeListId,
                     timestamp: Date.now() 
                 });
                 setCustomName('');
-                setCustomNote('');
+                setCustomQty(1);
                 setShowAddCustom(false);
+            };
+
+            // Megvett tétel kezelése: Átvezetés a spájzba vagy sima törlés
+            const markAsPurchased = async (shoppingItem, isPantryList) => {
+                if (isPantryList) {
+                    // Megkeressük, van-e már ilyen nevű tétel a spájzban
+                    const existingItem = items.find(i => i.name.toLowerCase().trim() === shoppingItem.name.toLowerCase().trim());
+                    const addQty = shoppingItem.qty || 1;
+
+                    if (existingItem) {
+                        // Ha már létezik, növeljük a mennyiségét
+                        await db.collection('spajz_items').doc(existingItem.id).update({
+                            qty: (existingItem.qty || 0) + addQty
+                        });
+                        await db.collection('spajz_logs').add({
+                            text: `Vásárolva & Feltöltve a spájzba: ${shoppingItem.name} (+${addQty} ${existingItem.unit || 'db'})`,
+                            date: new Date().toLocaleDateString(),
+                            timestamp: Date.now()
+                        });
+                    } else {
+                        // Ha nem létezik, felvesszük új tételként a spájzba
+                        const today = new Date().toISOString().split('T')[0];
+                        await db.collection('spajz_items').add({
+                            name: shoppingItem.name,
+                            category: shoppingItem.category || 'Alapanyag',
+                            storage: shoppingItem.storage || 'Kamra',
+                            qty: addQty,
+                            unit: shoppingItem.unit || 'db',
+                            min: 1,
+                            autoShopping: true,
+                            addedDate: today,
+                            expiryDate: '',
+                            timestamp: Date.now()
+                        });
+                        await db.collection('spajz_logs').add({
+                            text: `Új élelmiszerként megvéve & spájzba vezetve: ${shoppingItem.name} (${addQty} ${shoppingItem.unit || 'db'})`,
+                            date: new Date().toLocaleDateString(),
+                            timestamp: Date.now()
+                        });
+                    }
+                }
+
+                // Törlés a bevásárlólistáról
+                await db.collection('spajz_custom_shopping').doc(shoppingItem.id).delete();
             };
 
             const updateQty = async (id, delta) => {
@@ -335,7 +427,14 @@
                     return 0;
                 });
 
-            // Dinamikus stílusok sötét / világos módhoz
+            // Aktuálisan kiválasztott lista objektum
+            const currentListObj = shoppingLists.find(l => l.id === activeListId) || { name: '🛒 Fő Bevásárlólista', type: 'pantry' };
+            const isPantryList = currentListObj.type === 'pantry';
+
+            // Aktuális listához tartozó tételek
+            const currentListCustomItems = customShoppingItems.filter(i => (i.listId || 'default') === activeListId);
+
+            // Stílus beállítások
             const bgClass = darkMode ? 'bg-gray-950 text-gray-100' : 'bg-gray-50 text-gray-900';
             const cardBg = darkMode ? 'bg-gray-900 border-gray-800 text-gray-100' : 'bg-white border-gray-100 text-gray-900';
             const inputBg = darkMode ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-400' : 'bg-white border-gray-200 text-gray-900';
@@ -345,7 +444,7 @@
             return (
                 <div className={`max-w-md mx-auto p-4 min-h-screen flex flex-col justify-between ${bgClass}`}>
                     <div>
-                        {/* Fejléc sötét mód kapcsolóval */}
+                        {/* Fejléc */}
                         <header className="bg-emerald-700 text-white p-4 rounded-2xl shadow-lg mb-4 flex justify-between items-center">
                             <div>
                                 <h1 className="text-xl font-bold">🏠 Online Spájz</h1>
@@ -386,9 +485,7 @@
                                     />
                                 </div>
 
-                                {/* Két soros szűrőrendszer + Rendezés */}
                                 <div className="space-y-1.5 mb-3">
-                                    {/* 1. Sor: Tárolóhelyek */}
                                     <div className="flex gap-1.5 overflow-x-auto pb-1">
                                         {allStorageLocations.map(loc => (
                                             <button
@@ -401,7 +498,6 @@
                                         ))}
                                     </div>
 
-                                    {/* 2. Sor: Kategóriák */}
                                     <div className="flex gap-1.5 overflow-x-auto pb-1">
                                         {allCategories.map(cat => (
                                             <button
@@ -414,7 +510,6 @@
                                         ))}
                                     </div>
 
-                                    {/* 3. Sor: Rendezési sáv */}
                                     <div className={`flex justify-between items-center p-2 rounded-xl border text-xs ${cardBg}`}>
                                         <span className={`font-medium ${subText}`}>Rendezés:</span>
                                         <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className={`p-1 rounded-lg border text-xs font-semibold ${darkMode ? 'bg-gray-800 text-emerald-400 border-gray-700' : 'bg-gray-50 text-emerald-800 border-gray-300'}`}>
@@ -426,7 +521,6 @@
                                     </div>
                                 </div>
 
-                                {/* KÖZVETLEN ÚJ TÉTEL FELVITELE */}
                                 <div className="mb-4">
                                     <button 
                                         onClick={openQuickAdd} 
@@ -513,8 +607,6 @@
 
                                             return (
                                                 <div key={item.id} className={`p-3.5 rounded-xl shadow-sm border ${cardStyle}`}>
-                                                    
-                                                    {/* SZERKESZTŐ NÉZET */}
                                                     {isEditing ? (
                                                         <div className={`space-y-3 p-2.5 rounded-lg border ${darkMode ? 'bg-gray-900 border-amber-800' : 'bg-white/90 border-amber-200'}`}>
                                                             <h4 className="text-xs font-bold text-amber-500">✏️ Tétel szerkesztése</h4>
@@ -570,29 +662,20 @@
                                                             </div>
                                                         </div>
                                                     ) : (
-                                                        /* NORMÁL NÉZET */
                                                         <div>
                                                             <div className="flex justify-between items-center">
                                                                 <div className="cursor-pointer flex-1" onClick={() => setExpandedItemId(isExpanded ? null : item.id)}>
                                                                     <div className="flex items-center gap-2 flex-wrap">
                                                                         <h3 className="font-semibold text-sm">{item.name}</h3>
-                                                                        <button onClick={(e) => { e.stopPropagation(); startEditing(item); }} className="text-gray-400 hover:text-emerald-500 p-0.5 text-xs" title="Szerkesztés">
-                                                                            ✏️
-                                                                        </button>
+                                                                        <button onClick={(e) => { e.stopPropagation(); startEditing(item); }} className="text-gray-400 hover:text-emerald-500 p-0.5 text-xs" title="Szerkesztés">✏️</button>
                                                                         <span className={`text-[10px] px-2 py-0.5 rounded-md font-medium ${darkMode ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-emerald-100 text-emerald-800'}`}>{getStorageIcon(item.storage)} {item.storage || 'Kamra'}</span>
                                                                         <span className={`text-[10px] px-2 py-0.5 rounded-md ${darkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>{item.category}</span>
-                                                                        {isExpired && (
-                                                                            <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-md font-bold animate-pulse">LEJÁRT!</span>
-                                                                        )}
-                                                                        {isOutOfStock && !isExpired && (
-                                                                            <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-md font-bold animate-pulse">ELFOGYOTT!</span>
-                                                                        )}
+                                                                        {isExpired && <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-md font-bold animate-pulse">LEJÁRT!</span>}
+                                                                        {isOutOfStock && !isExpired && <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-md font-bold animate-pulse">ELFOGYOTT!</span>}
                                                                     </div>
                                                                     <div className="flex justify-between items-center mt-1 pr-2">
                                                                         <p className={`text-xs ${subText}`}>
-                                                                            Készlet: <span className={isOutOfStock ? "text-red-500 font-bold" : item.qty <= item.min ? "text-amber-500 font-bold" : "text-emerald-500 font-bold"}>
-                                                                                {item.qty} {item.unit}
-                                                                            </span> (Min: {item.min})
+                                                                            Készlet: <span className={isOutOfStock ? "text-red-500 font-bold" : item.qty <= item.min ? "text-amber-500 font-bold" : "text-emerald-500 font-bold"}>{item.qty} {item.unit}</span> (Min: {item.min})
                                                                         </p>
                                                                         <span className="text-[10px] text-gray-400 font-medium">📅 {item.addedDate || 'Nincs'}</span>
                                                                     </div>
@@ -617,12 +700,8 @@
                                                                         </span>
                                                                     </div>
                                                                     <div className="pt-2 flex justify-between items-center">
-                                                                        <button onClick={() => startEditing(item)} className={`px-3 py-1 rounded-md text-xs font-medium border ${darkMode ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
-                                                                            ✏️ Szerkesztés
-                                                                        </button>
-                                                                        <button onClick={() => deletePantryItem(item.id, item.name)} className="bg-red-500/20 text-red-400 px-3 py-1 rounded-md text-xs font-medium hover:bg-red-500/30">
-                                                                            🗑️ Tétel törlése
-                                                                        </button>
+                                                                        <button onClick={() => startEditing(item)} className={`px-3 py-1 rounded-md text-xs font-medium border ${darkMode ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>✏️ Szerkesztés</button>
+                                                                        <button onClick={() => deletePantryItem(item.id, item.name)} className="bg-red-500/20 text-red-400 px-3 py-1 rounded-md text-xs font-medium hover:bg-red-500/30">🗑️ Tétel törlése</button>
                                                                     </div>
                                                                 </div>
                                                             )}
@@ -636,64 +715,157 @@
                             </div>
                         )}
 
-                        {/* BEVÁSÁRLÓLISTA NÉZET */}
+                        {/* BEVÁSÁRLÓLISTA NÉZET - TÖBB LISTA ÉS KÉT TÍPUS */}
                         {activeTab === 'shopping' && (
                             <div className="space-y-4">
                                 <div className={`p-4 rounded-2xl shadow-sm border ${cardBg}`}>
-                                    <div className="flex justify-between items-center mb-3">
-                                        <h2 className="font-bold text-base text-emerald-600">🛒 Bevásárlólista</h2>
-                                        <button onClick={() => setShowAddCustom(!showAddCustom)} className="text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-medium hover:bg-emerald-700">
-                                            {showAddCustom ? 'Mégse' : '+ Egyedi tétel felírása'}
-                                        </button>
+                                    
+                                    {/* LISTA VÁLASZTÓ ÉS HOZZÁADÁS */}
+                                    <div className="mb-4">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <label className={`text-xs font-bold uppercase tracking-wider ${subText}`}>Válassz listát:</label>
+                                            <button onClick={() => setShowNewListModal(!showNewListModal)} className="text-xs text-emerald-500 font-bold hover:underline">
+                                                {showNewListModal ? '✖️ Mégse' : '➕ Új lista létrehozása'}
+                                            </button>
+                                        </div>
+
+                                        {/* Új lista létrehozása ablak */}
+                                        {showNewListModal && (
+                                            <form onSubmit={handleCreateList} className={`p-3 rounded-xl mb-3 border space-y-2.5 ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-emerald-50 border-emerald-200'}`}>
+                                                <h4 className="text-xs font-bold text-emerald-600">➕ Új Bevásárlólista készítése</h4>
+                                                <input type="text" required placeholder="Lista neve (pl. Hétvégi Nagybevásárlás)" value={newListName} onChange={e => setNewListName(e.target.value)} className={`w-full p-2 text-xs border rounded-lg ${inputBg}`} />
+                                                <div>
+                                                    <label className={`text-[10px] block mb-1 ${subText}`}>Lista Típusa:</label>
+                                                    <select value={newListType} onChange={e => setNewListType(e.target.value)} className={`w-full p-2 text-xs border rounded-lg ${inputBg}`}>
+                                                        <option value="pantry">📦 Spájzba átvezető (Megvételkor átkerül a spájzba)</option>
+                                                        <option value="simple">📝 Sima lista (Nem kerül át a spájzba)</option>
+                                                    </select>
+                                                </div>
+                                                <button type="submit" className="w-full bg-emerald-600 text-white text-xs py-2 rounded-lg font-bold hover:bg-emerald-700">Lista Létrehozása</button>
+                                            </form>
+                                        )}
+
+                                        {/* Gombok a listák közti váltáshoz */}
+                                        <div className="flex gap-2 overflow-x-auto pb-1">
+                                            {shoppingLists.map(list => (
+                                                <button
+                                                    key={list.id}
+                                                    onClick={() => setActiveListId(list.id)}
+                                                    className={`px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition-all ${activeListId === list.id ? 'bg-emerald-600 text-white shadow-md' : darkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700'}`}
+                                                >
+                                                    <span>{list.type === 'pantry' ? '📦' : '📝'}</span>
+                                                    <span>{list.name}</span>
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
 
+                                    {/* AKTÍV LISTA FEJLÉCE */}
+                                    <div className="flex justify-between items-center border-t border-b py-3 my-3 border-gray-200 dark:border-gray-800">
+                                        <div>
+                                            <h2 className="font-bold text-base text-emerald-600 flex items-center gap-1.5">
+                                                <span>{isPantryList ? '📦' : '📝'}</span>
+                                                <span>{currentListObj.name}</span>
+                                            </h2>
+                                            <p className={`text-[10px] ${subText}`}>
+                                                {isPantryList ? ' Megvételkor automatikusan átvezeti a tételt a Spájzba' : ' Sima lista, a megvett tételek simán törlődnek'}
+                                            </p>
+                                        </div>
+                                        <div className="flex gap-1">
+                                            <button onClick={() => setShowAddCustom(!showAddCustom)} className="text-xs bg-emerald-600 text-white px-2.5 py-1.5 rounded-lg font-medium hover:bg-emerald-700">
+                                                {showAddCustom ? 'Mégse' : '+ Tétel'}
+                                            </button>
+                                            {activeListId !== 'default' && activeListId !== 'simple' && (
+                                                <button onClick={() => deleteList(activeListId, currentListObj.name)} className="text-xs bg-red-500/20 text-red-400 px-2 py-1.5 rounded-lg font-medium hover:bg-red-500/30">
+                                                    🗑️
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* TÉTEL FELÍRÁSA AZ AKTÍV LISTÁRA */}
                                     {showAddCustom && (
-                                        <form onSubmit={handleAddCustomShopping} className={`p-3 rounded-xl mb-4 space-y-2 border ${darkMode ? 'bg-emerald-950/40 border-emerald-800' : 'bg-emerald-50 border-emerald-200'}`}>
-                                            <input type="text" placeholder="Mit kell venni? (pl. Sütőpapír)" required value={customName} onChange={e => setCustomName(e.target.value)} className={`w-full p-2 text-xs border rounded-lg ${inputBg}`} />
-                                            <input type="text" placeholder="Megjegyzés (pl. 2 csomag)" value={customNote} onChange={e => setCustomNote(e.target.value)} className={`w-full p-2 text-xs border rounded-lg ${inputBg}`} />
-                                            <button type="submit" className="w-full bg-emerald-600 text-white text-xs py-2 rounded-lg font-semibold hover:bg-emerald-700">Felírás a listára</button>
+                                        <form onSubmit={handleAddCustomShopping} className={`p-3 rounded-xl mb-4 space-y-2.5 border ${darkMode ? 'bg-emerald-950/40 border-emerald-800' : 'bg-emerald-50 border-emerald-200'}`}>
+                                            <h4 className="text-xs font-bold text-emerald-600">➕ Tétel felírása a(z) "{currentListObj.name}" listára</h4>
+                                            <div>
+                                                <input type="text" placeholder="Mit kell venni? (pl. Tej, Sütőpapír...)" required value={customName} onChange={e => setCustomName(e.target.value)} className={`w-full p-2 text-xs border rounded-lg ${inputBg}`} />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div>
+                                                    <label className={`text-[10px] block ${subText}`}>Mennyiség & egység</label>
+                                                    <div className="flex gap-1">
+                                                        <input type="number" min="1" value={customQty} onChange={e => setCustomQty(e.target.value)} className={`w-1/2 p-2 text-xs border rounded-lg ${inputBg}`} />
+                                                        <select value={customUnit} onChange={e => setCustomUnit(e.target.value)} className={`w-1/2 p-2 text-xs border rounded-lg ${inputBg}`}>
+                                                            {defaultUnits.map(u => <option key={u} value={u}>{u}</option>)}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                {isPantryList && (
+                                                    <div>
+                                                        <label className={`text-[10px] block ${subText}`}>Hova kerüljön spájzoláskor?</label>
+                                                        <select value={customTargetStorage} onChange={e => setCustomTargetStorage(e.target.value)} className={`w-full p-2 text-xs border rounded-lg ${inputBg}`}>
+                                                            {defaultStorageLocations.map(s => <option key={s} value={s}>{getStorageIcon(s)} {s}</option>)}
+                                                        </select>
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <button type="submit" className="w-full bg-emerald-600 text-white text-xs py-2 rounded-lg font-semibold hover:bg-emerald-700">Felírás a kiválasztott listára</button>
                                         </form>
                                     )}
 
-                                    {customShoppingItems.length > 0 && (
+                                    {/* FELÍRT TÉTELEK A KIVÁLASZTOTT LISTÁBAN */}
+                                    {currentListCustomItems.length > 0 && (
                                         <div className="mb-4">
-                                            <h3 className={`text-xs font-bold mb-2 uppercase ${subText}`}>📝 Egyedileg felírt tételek</h3>
+                                            <h3 className={`text-xs font-bold mb-2 uppercase ${subText}`}>📝 Listán lévő tételek</h3>
                                             <div className="space-y-2">
-                                                {customShoppingItems.map(item => (
+                                                {currentListCustomItems.map(item => (
                                                     <div key={item.id} className={`flex justify-between items-center p-3 rounded-xl border ${darkMode ? 'bg-purple-950/40 border-purple-900 text-purple-200' : 'bg-purple-50 border-purple-100 text-purple-900'}`}>
                                                         <div>
                                                             <h4 className="font-semibold text-sm">{item.name}</h4>
-                                                            {item.note && <p className={`text-xs ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>{item.note}</p>}
+                                                            <p className={`text-xs ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
+                                                                {item.qty || 1} {item.unit || 'db'} {isPantryList ? ` ➔ ${getStorageIcon(item.storage)} ${item.storage || 'Kamra'}` : ''}
+                                                            </p>
                                                         </div>
-                                                        <button onClick={() => removeCustomShopping(item.id)} className="bg-purple-600 text-white text-xs px-2.5 py-1.5 rounded-lg hover:bg-purple-700">
-                                                            ✓ Megvéve / Törlés
-                                                        </button>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <button 
+                                                                onClick={() => markAsPurchased(item, isPantryList)} 
+                                                                className={`text-xs px-2.5 py-1.5 rounded-lg font-bold transition-all ${isPantryList ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-purple-600 text-white hover:bg-purple-700'}`}
+                                                            >
+                                                                {isPantryList ? '✓ Megvéve & Spájzba' : '✓ Megvéve'}
+                                                            </button>
+                                                            <button onClick={() => removeCustomShopping(item.id)} className="text-xs bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300 px-2 py-1.5 rounded-lg">
+                                                                ✕
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 ))}
                                             </div>
                                         </div>
                                     )}
 
-                                    <div>
-                                        <h3 className={`text-xs font-bold mb-2 uppercase ${subText}`}>📦 Kifogyott spájz tételek</h3>
-                                        {lowStockItems.length === 0 ? (
-                                            <p className={`text-xs py-2 ${subText}`}>Mindenből van elég a spájzban!</p>
-                                        ) : (
-                                            <div className="space-y-2">
-                                                {lowStockItems.map(item => (
-                                                    <div key={item.id} className={`flex justify-between items-center p-3 rounded-xl border ${darkMode ? 'bg-red-950/40 border-red-900 text-red-200' : 'bg-red-50 border-red-100 text-red-900'}`}>
-                                                        <div>
-                                                            <h4 className="font-semibold text-sm">{item.name}</h4>
-                                                            <p className={`text-xs ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Jelenleg: {item.qty} {item.unit} (Min: {item.min})</p>
+                                    {/* AUTOMATIKUSAN KIFOGYOTT SPÁJZ TÉTELEK (CSAK A SPÁJZ TÍPUSÚ LISTÁKBAN) */}
+                                    {isPantryList && (
+                                        <div>
+                                            <h3 className={`text-xs font-bold mb-2 uppercase ${subText}`}>📦 Automatikusan kifogyott spájz tételek</h3>
+                                            {lowStockItems.length === 0 ? (
+                                                <p className={`text-xs py-2 ${subText}`}>Mindenből van elég a spájzban!</p>
+                                            ) : (
+                                                <div className="space-y-2">
+                                                    {lowStockItems.map(item => (
+                                                        <div key={item.id} className={`flex justify-between items-center p-3 rounded-xl border ${darkMode ? 'bg-red-950/40 border-red-900 text-red-200' : 'bg-red-50 border-red-100 text-red-900'}`}>
+                                                            <div>
+                                                                <h4 className="font-semibold text-sm">{item.name}</h4>
+                                                                <p className={`text-xs ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Jelenleg: {item.qty} {item.unit} (Min: {item.min})</p>
+                                                            </div>
+                                                            <button onClick={() => updateQty(item.id, item.min + 1 - item.qty)} className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-700">
+                                                                + Feltöltve spájzba
+                                                            </button>
                                                         </div>
-                                                        <button onClick={() => updateQty(item.id, item.min + 1 - item.qty)} className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg hover:bg-emerald-700">
-                                                            + Feltöltve
-                                                        </button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -775,7 +947,6 @@
                                     </form>
                                 </div>
 
-                                {/* Segédlet táblázat */}
                                 <div className={`p-4 rounded-2xl shadow-sm border text-xs ${cardBg}`}>
                                     <h3 className="font-bold text-emerald-600 mb-2">💡 Lejárati idő segédlet (Átlagos ciklusok)</h3>
                                     <div className={`space-y-1.5 ${subText}`}>

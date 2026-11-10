@@ -64,7 +64,7 @@
             const [newListName, setNewListName] = React.useState('');
             const [newListType, setNewListType] = React.useState('pantry');
 
-            // Új spájz tétel state (mennyiség alapból 0)
+            // Új spájz tétel state (mennyiség alapból 1)
             const [newName, setNewName] = React.useState('');
             const [newCategory, setNewCategory] = React.useState('Alapanyag');
             const [customCategoryInput, setCustomCategoryInput] = React.useState('');
@@ -72,7 +72,7 @@
             const [newStorage, setNewStorage] = React.useState('Kamra');
             const [customStorageInput, setCustomStorageInput] = React.useState('');
 
-            const [newQty, setNewQty] = React.useState(0);
+            const [newQty, setNewQty] = React.useState(1);
             const [newUnit, setNewUnit] = React.useState('db');
             const [customUnitInput, setCustomUnitInput] = React.useState('');
 
@@ -247,7 +247,7 @@
                 });
                 
                 setNewName('');
-                setNewQty(0);
+                setNewQty(1);
                 setNewExpiry('');
                 setExpiryDays('');
                 setCustomStorageInput('');
@@ -591,9 +591,11 @@
                                             <div className="grid grid-cols-2 gap-2">
                                                 <div>
                                                     <label className={`text-[10px] block ${subText}`}>Mennyiség & egység</label>
-                                                    <div className="flex gap-1">
-                                                        <input type="number" min="0" value={newQty} onChange={e => setNewQty(e.target.value)} className={`w-1/2 p-2 border rounded-xl text-xs ${inputBg}`} />
-                                                        <select value={newUnit} onChange={e => setNewUnit(e.target.value)} className={`w-1/2 p-2 border rounded-xl text-xs ${inputBg}`}>
+                                                    <div className="flex gap-1 items-center">
+                                                        <button type="button" onClick={() => setNewQty(Math.max(0, Number(newQty) - 1))} className={`w-7 h-8 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>-</button>
+                                                        <input type="number" min="0" value={newQty} onChange={e => setNewQty(e.target.value)} className={`w-full p-2 border rounded-xl text-xs text-center ${inputBg}`} />
+                                                        <button type="button" onClick={() => setNewQty(Number(newQty) + 1)} className={`w-7 h-8 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>+</button>
+                                                        <select value={newUnit} onChange={e => setNewUnit(e.target.value)} className={`w-full p-2 border rounded-xl text-xs ${inputBg}`}>
                                                             {defaultUnits.map(u => <option key={u} value={u}>{u}</option>)}
                                                         </select>
                                                     </div>
@@ -828,9 +830,11 @@
                                             <div className="grid grid-cols-2 gap-2">
                                                 <div>
                                                     <label className={`text-[10px] block ${subText}`}>Mennyiség & egység</label>
-                                                    <div className="flex gap-1">
-                                                        <input type="number" min="1" value={customQty} onChange={e => setCustomQty(e.target.value)} className={`w-1/2 p-2 text-xs border rounded-lg ${inputBg}`} />
-                                                        <select value={customUnit} onChange={e => setCustomUnit(e.target.value)} className={`w-1/2 p-2 text-xs border rounded-lg ${inputBg}`}>
+                                                    <div className="flex gap-1 items-center">
+                                                        <button type="button" onClick={() => setCustomQty(Math.max(1, Number(customQty) - 1))} className={`w-7 h-8 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>-</button>
+                                                        <input type="number" min="1" value={customQty} onChange={e => setCustomQty(e.target.value)} className={`w-full p-2 text-xs text-center border rounded-lg ${inputBg}`} />
+                                                        <button type="button" onClick={() => setCustomQty(Number(customQty) + 1)} className={`w-7 h-8 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>+</button>
+                                                        <select value={customUnit} onChange={e => setCustomUnit(e.target.value)} className={`w-full p-2 text-xs border rounded-lg ${inputBg}`}>
                                                             {defaultUnits.map(u => <option key={u} value={u}>{u}</option>)}
                                                         </select>
                                                     </div>
@@ -961,12 +965,13 @@
 
                                         <div className="grid grid-cols-2 gap-2">
                                             <div>
-                                                <label className={`block text-xs font-medium mb-1 ${subText}`}>Mennyiség</label>
-                                                <input type="number" min="0" value={newQty} onChange={e => setNewQty(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm ${inputBg}`} />
-                                            </div>
-                                            <div>
-                                                <label className={`block text-xs font-medium mb-1 ${subText}`}>Mértékegység</label>
-                                                <select value={newUnit} onChange={e => setNewUnit(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm mb-1 ${inputBg}`}>
+                                                <label className={`block text-xs font-medium mb-1 ${subText}`}>Mennyiség & Mértékegység</label>
+                                                <div className="flex gap-1 items-center">
+                                                    <button type="button" onClick={() => setNewQty(Math.max(0, Number(newQty) - 1))} className={`w-8 h-9 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>-</button>
+                                                    <input type="number" min="0" value={newQty} onChange={e => setNewQty(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm text-center ${inputBg}`} />
+                                                    <button type="button" onClick={() => setNewQty(Number(newQty) + 1)} className={`w-8 h-9 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>+</button>
+                                                </div>
+                                                <select value={newUnit} onChange={e => setNewUnit(e.target.value)} className={`w-full p-2 border rounded-xl text-xs mt-1.5 ${inputBg}`}>
                                                     {defaultUnits.map(u => <option key={u} value={u}>{u}</option>)}
                                                     <option value="Saját mértékegység...">+ Saját...</option>
                                                 </select>
@@ -974,19 +979,17 @@
                                                     <input type="text" placeholder="pl. doboz" required value={customUnitInput} onChange={e => setCustomUnitInput(e.target.value)} className={`w-full p-2.5 border rounded-xl text-xs mt-1 ${inputBg}`} />
                                                 )}
                                             </div>
-                                        </div>
-
-                                        <div className="grid grid-cols-2 gap-2">
                                             <div>
                                                 <label className={`block text-xs font-medium mb-1 ${subText}`}>Min. készlet</label>
                                                 <input type="number" min="0" value={newMin} onChange={e => setNewMin(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm ${inputBg}`} />
                                             </div>
-                                            <div>
-                                                <label className={`block text-xs font-medium mb-1 ${subText}`}>Lejárati idő (Napi gyorsválasztó)</label>
-                                                <div className="flex gap-1">
-                                                    <input type="number" min="1" placeholder="pl. 7 nap" value={expiryDays} onChange={e => { setExpiryDays(e.target.value); setNewExpiry(''); }} className={`w-full p-2.5 border rounded-xl text-xs ${inputBg}`} title="Hány nap múlva jár le?" />
-                                                    <input type="date" value={newExpiry} onChange={e => { setNewExpiry(e.target.value); setExpiryDays(''); }} className={`w-full p-2.5 border rounded-xl text-xs ${inputBg}`} title="Vagy pontos dátum" />
-                                                </div>
+                                        </div>
+
+                                        <div>
+                                            <label className={`block text-xs font-medium mb-1 ${subText}`}>Lejárati idő (Napi gyorsválasztó)</label>
+                                            <div className="flex gap-1">
+                                                <input type="number" min="1" placeholder="pl. 7 nap" value={expiryDays} onChange={e => { setExpiryDays(e.target.value); setNewExpiry(''); }} className={`w-full p-2.5 border rounded-xl text-xs ${inputBg}`} title="Hány nap múlva jár le?" />
+                                                <input type="date" value={newExpiry} onChange={e => { setNewExpiry(e.target.value); setExpiryDays(''); }} className={`w-full p-2.5 border rounded-xl text-xs ${inputBg}`} title="Vagy pontos dátum" />
                                             </div>
                                         </div>
 

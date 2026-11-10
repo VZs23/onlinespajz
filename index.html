@@ -64,7 +64,7 @@
             const [newListName, setNewListName] = React.useState('');
             const [newListType, setNewListType] = React.useState('pantry');
 
-            // Új spájz tétel state (mennyiség alapból 1)
+            // Új spájz tétel state (mennyiség és min alapból 0)
             const [newName, setNewName] = React.useState('');
             const [newCategory, setNewCategory] = React.useState('Alapanyag');
             const [customCategoryInput, setCustomCategoryInput] = React.useState('');
@@ -76,7 +76,7 @@
             const [newUnit, setNewUnit] = React.useState('db');
             const [customUnitInput, setCustomUnitInput] = React.useState('');
 
-            const [newMin, setNewMin] = React.useState(1);
+            const [newMin, setNewMin] = React.useState(0);
             const [newExpiry, setNewExpiry] = React.useState('');
             const [expiryDays, setExpiryDays] = React.useState('');
             const [newAutoShopping, setNewAutoShopping] = React.useState(true);
@@ -89,7 +89,7 @@
             const [editCustomStorageInput, setEditCustomStorageInput] = React.useState('');
             const [editExpiry, setEditExpiry] = React.useState('');
             const [editExpiryDays, setEditExpiryDays] = React.useState('');
-            const [editMin, setEditMin] = React.useState(1);
+            const [editMin, setEditMin] = React.useState(0);
             const [editUnit, setEditUnit] = React.useState('');
 
             // Bevásárlólista tétel felírás state
@@ -248,6 +248,7 @@
                 
                 setNewName('');
                 setNewQty(1);
+                setNewMin(0);
                 setNewExpiry('');
                 setExpiryDays('');
                 setCustomStorageInput('');
@@ -279,7 +280,7 @@
 
                 setEditExpiry(item.expiryDate || '');
                 setEditExpiryDays('');
-                setEditMin(item.min || 1);
+                setEditMin(item.min !== undefined ? item.min : 0);
                 setEditUnit(item.unit || 'db');
             };
 
@@ -345,7 +346,7 @@
                             storage: shoppingItem.storage || 'Kamra',
                             qty: addQty,
                             unit: shoppingItem.unit || 'db',
-                            min: 1,
+                            min: 0,
                             autoShopping: true,
                             addedDate: today,
                             expiryDate: '',
@@ -402,7 +403,7 @@
                 await db.collection('spajz_custom_shopping').doc(id).delete();
             };
 
-            const lowStockItems = items.filter(i => i.qty <= i.min && i.autoShopping);
+            const lowStockItems = items.filter(i => (i.min !== undefined ? i.min : 0) > 0 && i.qty <= (i.min !== undefined ? i.min : 0) && i.autoShopping);
             const todayStr = new Date().toISOString().split('T')[0];
 
             const maxQtyInPantry = Math.max(...items.map(i => i.qty || 0), 1);
@@ -624,7 +625,8 @@
                                             const isExpanded = expandedItemId === item.id;
                                             const isEditing = editingItemId === item.id;
                                             const isExpired = item.expiryDate && item.expiryDate.trim() !== '' && item.expiryDate < todayStr;
-                                            const isOutOfStock = item.qty <= 0;
+                                            const itemMin = item.min !== undefined ? item.min : 0;
+                                            const isOutOfStock = itemMin > 0 && item.qty <= itemMin;
                                             
                                             let cardStyle = cardBg;
                                             if (isExpired) {
@@ -677,7 +679,11 @@
                                                                 </div>
                                                                 <div>
                                                                     <label className={`text-[10px] block ${subText}`}>Min. készlet</label>
-                                                                    <input type="number" min="0" value={editMin} onChange={e => setEditMin(e.target.value)} className={`w-full p-2 border rounded-lg text-xs ${inputBg}`} />
+                                                                    <div className="flex gap-1 items-center">
+                                                                        <button type="button" onClick={() => setEditMin(Math.max(0, Number(editMin) - 1))} className={`w-7 h-7 rounded font-bold ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>-</button>
+                                                                        <input type="number" min="0" value={editMin} onChange={e => setEditMin(e.target.value)} className={`w-full p-1 border rounded text-xs text-center ${inputBg}`} />
+                                                                        <button type="button" onClick={() => setEditMin(Number(editMin) + 1)} className={`w-7 h-7 rounded font-bold ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>+</button>
+                                                                    </div>
                                                                 </div>
                                                             </div>
                                                             <div>
@@ -708,7 +714,7 @@
                                                                     {/* KÉSZLET ÉS LEJÁRAT A FŐ KÁRTYÁN */}
                                                                     <div className="flex justify-between items-center mt-1 pr-2">
                                                                         <p className={`text-xs ${subText}`}>
-                                                                            Készlet: <span className={isOutOfStock ? "text-red-500 font-bold" : item.qty <= item.min ? "text-amber-500 font-bold" : "text-emerald-500 font-bold"}>{item.qty} {item.unit}</span> (Min: {item.min})
+                                                                            Készlet: <span className={isOutOfStock ? "text-amber-500 font-bold" : "text-emerald-500 font-bold"}>{item.qty} {item.unit}</span> (Min: {itemMin})
                                                                         </p>
                                                                         <div className="flex gap-2 text-[10px]">
                                                                             <span className={isExpired ? "text-red-500 font-bold" : subText}>⏳ {item.expiryDate ? item.expiryDate : 'Nincs lejárat'}</span>
@@ -885,25 +891,28 @@
                                         <div>
                                             <h3 className={`text-xs font-bold mb-2 uppercase ${subText}`}>📦 Automatikusan kifogyott spájz tételek</h3>
                                             {lowStockItems.length === 0 ? (
-                                                <p className={`text-xs py-2 ${subText}`}>Mindenből van elég a spájzban!</p>
+                                                <p className={`text-xs py-2 ${subText}`}>Mindenből van elég a spájzban (vagy a min. készlet 0)!</p>
                                             ) : (
                                                 <div className="space-y-2">
-                                                    {lowStockItems.map(item => (
-                                                        <div key={item.id} className={`flex justify-between items-center p-3 rounded-xl border ${darkMode ? 'bg-red-950/40 border-red-900 text-red-200' : 'bg-red-50 border-red-100 text-red-900'}`}>
-                                                            <div>
-                                                                <h4 className="font-semibold text-sm">{item.name}</h4>
-                                                                <p className={`text-xs ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Jelenleg: {item.qty} {item.unit} (Min: {item.min})</p>
+                                                    {lowStockItems.map(item => {
+                                                        const itemMin = item.min !== undefined ? item.min : 0;
+                                                        return (
+                                                            <div key={item.id} className={`flex justify-between items-center p-3 rounded-xl border ${darkMode ? 'bg-red-950/40 border-red-900 text-red-200' : 'bg-red-50 border-red-100 text-red-900'}`}>
+                                                                <div>
+                                                                    <h4 className="font-semibold text-sm">{item.name}</h4>
+                                                                    <p className={`text-xs ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Jelenleg: {item.qty} {item.unit} (Min: {itemMin})</p>
+                                                                </div>
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <button onClick={() => updateQty(item.id, itemMin + 1 - item.qty)} className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-700">
+                                                                        + Feltöltve
+                                                                    </button>
+                                                                    <button onClick={() => db.collection('spajz_items').doc(item.id).update({ autoShopping: false })} className="text-xs bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300 px-2 py-1.5 rounded-lg" title="Levétel a listáról">
+                                                                        ✕
+                                                                    </button>
+                                                                </div>
                                                             </div>
-                                                            <div className="flex items-center gap-1.5">
-                                                                <button onClick={() => updateQty(item.id, item.min + 1 - item.qty)} className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-700">
-                                                                    + Feltöltve
-                                                                </button>
-                                                                <button onClick={() => db.collection('spajz_items').doc(item.id).update({ autoShopping: false })} className="text-xs bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300 px-2 py-1.5 rounded-lg" title="Levétel a listáról">
-                                                                    ✕
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    ))}
+                                                        );
+                                                    })}
                                                 </div>
                                             )}
                                         </div>
@@ -981,7 +990,11 @@
                                             </div>
                                             <div>
                                                 <label className={`block text-xs font-medium mb-1 ${subText}`}>Min. készlet</label>
-                                                <input type="number" min="0" value={newMin} onChange={e => setNewMin(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm ${inputBg}`} />
+                                                <div className="flex gap-1 items-center">
+                                                    <button type="button" onClick={() => setNewMin(Math.max(0, Number(newMin) - 1))} className={`w-8 h-9 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>-</button>
+                                                    <input type="number" min="0" value={newMin} onChange={e => setNewMin(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm text-center ${inputBg}`} />
+                                                    <button type="button" onClick={() => setNewMin(Number(newMin) + 1)} className={`w-8 h-9 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>+</button>
+                                                </div>
                                             </div>
                                         </div>
 
@@ -1064,7 +1077,8 @@
                                         <div className="space-y-3">
                                             {items.map(item => {
                                                 const percentage = Math.min(100, Math.max(8, (item.qty / maxQtyInPantry) * 100));
-                                                const isLow = item.qty <= item.min;
+                                                const itemMin = item.min !== undefined ? item.min : 0;
+                                                const isLow = itemMin > 0 && item.qty <= itemMin;
                                                 const isZero = item.qty <= 0;
 
                                                 let barColor = "bg-emerald-500";

@@ -213,11 +213,12 @@
                 }
                 await batch.commit();
 
-                // Automatikus bevásárlólista tisztítás Undo esetén, ha a visszaállt mennyiség elegendő
+                // Automatikus lista tisztítás Undo esetén, ha a készlet elegendő lett
                 for (const prevItem of previousState) {
                     const pQty = Number(prevItem.qty) || 0;
                     const pMin = prevItem.min !== undefined ? Number(prevItem.min) : 0;
-                    if (pQty > pMin) {
+                    const hasEnough = pMin > 0 ? (pQty >= pMin) : (pQty >= 1);
+                    if (hasEnough) {
                         const shopMatch = customShoppingItems.find(
                             si => si.name && si.name.toLowerCase().trim() === prevItem.name.toLowerCase().trim()
                         );
@@ -256,7 +257,8 @@
                 for (const nextItem of nextState) {
                     const nQty = Number(nextItem.qty) || 0;
                     const nMin = nextItem.min !== undefined ? Number(nextItem.min) : 0;
-                    if (nQty > nMin) {
+                    const hasEnough = nMin > 0 ? (nQty >= nMin) : (nQty >= 1);
+                    if (hasEnough) {
                         const shopMatch = customShoppingItems.find(
                             si => si.name && si.name.toLowerCase().trim() === nextItem.name.toLowerCase().trim()
                         );
@@ -348,11 +350,13 @@
                     si => si.name && si.name.toLowerCase().trim() === cleanName
                 );
 
-                if ((newItem.qty <= 0 || newItem.qty <= newItem.min) && newItem.autoShopping !== false) {
+                const hasEnough = newItem.min > 0 ? (newItem.qty >= newItem.min) : (newItem.qty >= 1);
+
+                if (!hasEnough && newItem.autoShopping !== false) {
                     if (!existingShopMatch) {
                         await db.collection('spajz_custom_shopping').add({
                             name: newItem.name,
-                            qty: Math.max(1, newItem.min - newItem.qty + 1),
+                            qty: Math.max(1, newItem.min > 0 ? (newItem.min - newItem.qty) : 1),
                             unit: newItem.unit,
                             storage: newItem.storage,
                             category: newItem.category,
@@ -360,7 +364,7 @@
                             timestamp: Date.now()
                         });
                     }
-                } else if (newItem.qty > newItem.min) {
+                } else if (hasEnough) {
                     if (existingShopMatch) {
                         await db.collection('spajz_custom_shopping').doc(existingShopMatch.id).delete();
                     }
@@ -420,12 +424,40 @@
                 const finalEditCategory = editCategory === 'Saját kategória...' ? (editCustomCategoryInput.trim() || 'Egyéb') : editCategory;
                 const finalEditExpiry = editExpiryDays ? calculateExpiryFromDays(editExpiryDays) : editExpiry;
 
+                const targetItem = items.find(i => i.id === id);
+                const currentQty = targetItem ? Number(targetItem.qty) || 0 : 0;
+                const newMinNum = Number(editMin);
+
+                const hasEnough = newMinNum > 0 ? (currentQty >= newMinNum) : (currentQty >= 1);
+                const cleanName = editName.toLowerCase().trim();
+                const existingShopMatch = customShoppingItems.find(
+                    si => si.name && si.name.toLowerCase().trim() === cleanName
+                );
+
+                if (hasEnough) {
+                    if (existingShopMatch) {
+                        await db.collection('spajz_custom_shopping').doc(existingShopMatch.id).delete();
+                    }
+                } else {
+                    if (!existingShopMatch) {
+                        await db.collection('spajz_custom_shopping').add({
+                            name: editName.trim(),
+                            qty: Math.max(1, newMinNum > 0 ? (newMinNum - currentQty) : 1),
+                            unit: targetItem ? targetItem.unit || 'db' : 'db',
+                            storage: finalEditStorage,
+                            category: finalEditCategory,
+                            listId: 'default',
+                            timestamp: Date.now()
+                        });
+                    }
+                }
+
                 await db.collection('spajz_items').doc(id).update({
                     name: editName.trim(),
                     category: finalEditCategory,
                     storage: finalEditStorage,
                     expiryDate: finalEditExpiry,
-                    min: Number(editMin),
+                    min: newMinNum,
                     unit: editUnit
                 });
                 await db.collection('spajz_logs').add({ 
@@ -528,8 +560,10 @@
                     si => si.name && si.name.toLowerCase().trim() === cleanItemName
                 );
 
-                // AUTOMATIKUS LISTÁRA ÍRÁS VAGY TÖRLÉS MENNYISÉG ALAPJÁN
-                if ((newQty <= 0 || newQty <= itemMin) && item.autoShopping !== false) {
+                // Elegendő készlet vizsgálata: min > 0 esetén newQty >= min, egyébként newQty >= 1
+                const hasEnough = itemMin > 0 ? (newQty >= itemMin) : (newQty >= 1);
+
+                if (!hasEnough && item.autoShopping !== false) {
                     if (!existingShopMatch) {
                         await db.collection('spajz_custom_shopping').add({
                             name: item.name,
@@ -541,8 +575,8 @@
                             timestamp: Date.now()
                         });
                     }
-                } else if (newQty > itemMin) {
-                    // Ha a mennyiség elegendő lett (pl. + gombbal), azonnal töröljük a bevásárlólistáról is!
+                } else if (hasEnough) {
+                    // Ha annyi van mint a minimum/készlet vagy több, azonnal eltávolítjuk a listáról!
                     if (existingShopMatch) {
                         await db.collection('spajz_custom_shopping').doc(existingShopMatch.id).delete();
                     }

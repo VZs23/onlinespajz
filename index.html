@@ -46,13 +46,20 @@
                 return localStorage.getItem('spajz_dark_mode') === 'true';
             });
 
+            React.useEffect(() => {
+                if (darkMode) {
+                    document.body.className = "bg-gray-950 text-gray-100 pb-24 transition-colors duration-300";
+                } else {
+                    document.body.className = "bg-gray-50 text-gray-900 pb-24 transition-colors duration-300";
+                }
+            }, [darkMode]);
+
             const [items, setItems] = React.useState([]);
             const [customShoppingItems, setCustomShoppingItems] = React.useState([]);
             const [shoppingLists, setShoppingLists] = React.useState([]);
             const [activeListId, setActiveListId] = React.useState('default');
             const [logs, setLogs] = React.useState([]);
 
-            // Undo / Redo állapotok
             const [undoStack, setUndoStack] = React.useState([]);
             const [redoStack, setRedoStack] = React.useState([]);
 
@@ -64,11 +71,9 @@
             const [showQuickAdd, setShowQuickAdd] = React.useState(false);
             const [showNewListModal, setShowNewListModal] = React.useState(false);
 
-            // Új lista state
             const [newListName, setNewListName] = React.useState('');
             const [newListType, setNewListType] = React.useState('pantry');
 
-            // Új spájz tétel state
             const [newName, setNewName] = React.useState('');
             const [newCategory, setNewCategory] = React.useState('Alapanyag');
             const [customCategoryInput, setCustomCategoryInput] = React.useState('');
@@ -85,7 +90,6 @@
             const [expiryDays, setExpiryDays] = React.useState('');
             const [newAutoShopping, setNewAutoShopping] = React.useState(true);
 
-            // Szerkesztési state-ek
             const [editName, setEditName] = React.useState('');
             const [editCategory, setEditCategory] = React.useState('');
             const [editCustomCategoryInput, setEditCustomCategoryInput] = React.useState('');
@@ -96,7 +100,6 @@
             const [editMin, setEditMin] = React.useState(0);
             const [editUnit, setEditUnit] = React.useState('');
 
-            // Bevásárlólista tétel felírás state
             const [customName, setCustomName] = React.useState('');
             const [customQty, setCustomQty] = React.useState(1);
             const [customUnit, setCustomUnit] = React.useState('db');
@@ -180,6 +183,101 @@
                 };
             }, []);
 
+            const recordActionForUndo = () => {
+                setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(items))]);
+                setRedoStack([]); 
+            };
+
+            const undo = async () => {
+                if (undoStack.length === 0) return;
+                const previousState = undoStack[undoStack.length - 1];
+                const newUndoStack = undoStack.slice(0, undoStack.length - 1);
+
+                setRedoStack(prev => [JSON.parse(JSON.stringify(items)), ...prev]);
+                setUndoStack(newUndoStack);
+
+                const batch = db.batch();
+                const currentIds = items.map(i => i.id);
+                const prevIds = previousState.map(i => i.id);
+
+                for (const item of previousState) {
+                    const { id, ...data } = item;
+                    const docRef = db.collection('spajz_items').doc(id);
+                    batch.set(docRef, data);
+                }
+                for (const id of currentIds) {
+                    if (!prevIds.includes(id)) {
+                        const docRef = db.collection('spajz_items').doc(id);
+                        batch.delete(docRef);
+                    }
+                }
+                await batch.commit();
+
+                // Automatikus bevásárlólista tisztítás Undo esetén, ha a visszaállt mennyiség elegendő
+                for (const prevItem of previousState) {
+                    const pQty = Number(prevItem.qty) || 0;
+                    const pMin = prevItem.min !== undefined ? Number(prevItem.min) : 0;
+                    if (pQty > pMin) {
+                        const shopMatch = customShoppingItems.find(
+                            si => si.name && si.name.toLowerCase().trim() === prevItem.name.toLowerCase().trim()
+                        );
+                        if (shopMatch) {
+                            await db.collection('spajz_custom_shopping').doc(shopMatch.id).delete();
+                        }
+                    }
+                }
+            };
+
+            const redo = async () => {
+                if (redoStack.length === 0) return;
+                const nextState = redoStack[0];
+                const newRedoStack = redoStack.slice(1);
+
+                setUndoStack(prev => [...prev, JSON.parse(JSON.stringify(items))]);
+                setRedoStack(newRedoStack);
+
+                const batch = db.batch();
+                const currentIds = items.map(i => i.id);
+                const nextIds = nextState.map(i => i.id);
+
+                for (const item of nextState) {
+                    const { id, ...data } = item;
+                    const docRef = db.collection('spajz_items').doc(id);
+                    batch.set(docRef, data);
+                }
+                for (const id of currentIds) {
+                    if (!nextIds.includes(id)) {
+                        const docRef = db.collection('spajz_items').doc(id);
+                        batch.delete(docRef);
+                    }
+                }
+                await batch.commit();
+
+                for (const nextItem of nextState) {
+                    const nQty = Number(nextItem.qty) || 0;
+                    const nMin = nextItem.min !== undefined ? Number(nextItem.min) : 0;
+                    if (nQty > nMin) {
+                        const shopMatch = customShoppingItems.find(
+                            si => si.name && si.name.toLowerCase().trim() === nextItem.name.toLowerCase().trim()
+                        );
+                        if (shopMatch) {
+                            await db.collection('spajz_custom_shopping').doc(shopMatch.id).delete();
+                        }
+                    }
+                }
+            };
+
+            const resetLogs = async () => {
+                if (confirm("Biztosan törölni szeretnéd a naplót és a Top 10 fogyasztási statisztikát?")) {
+                    const snapshot = await db.collection('spajz_logs').get();
+                    const batch = db.batch();
+                    snapshot.docs.forEach(doc => {
+                        batch.delete(doc.ref);
+                    });
+                    await batch.commit();
+                }
+            };
+
             const calculateExpiryFromDays = (days) => {
                 if (!days || isNaN(days)) return '';
                 const date = new Date();
@@ -223,6 +321,8 @@
                 e.preventDefault();
                 if (!newName.trim()) return;
 
+                recordActionForUndo();
+
                 const finalStorage = newStorage === 'Saját tárolóhely...' ? (customStorageInput.trim() || 'Kamra') : newStorage;
                 const finalCategory = newCategory === 'Saját kategória...' ? (customCategoryInput.trim() || 'Egyéb') : newCategory;
                 const finalUnit = newUnit === 'Saját mértékegység...' ? (customUnitInput.trim() || 'db') : newUnit;
@@ -242,6 +342,29 @@
                     expiryDate: finalExpiryDate,
                     timestamp: Date.now()
                 };
+
+                const cleanName = newItem.name.toLowerCase().trim();
+                const existingShopMatch = customShoppingItems.find(
+                    si => si.name && si.name.toLowerCase().trim() === cleanName
+                );
+
+                if ((newItem.qty <= 0 || newItem.qty <= newItem.min) && newItem.autoShopping !== false) {
+                    if (!existingShopMatch) {
+                        await db.collection('spajz_custom_shopping').add({
+                            name: newItem.name,
+                            qty: Math.max(1, newItem.min - newItem.qty + 1),
+                            unit: newItem.unit,
+                            storage: newItem.storage,
+                            category: newItem.category,
+                            listId: 'default',
+                            timestamp: Date.now()
+                        });
+                    }
+                } else if (newItem.qty > newItem.min) {
+                    if (existingShopMatch) {
+                        await db.collection('spajz_custom_shopping').doc(existingShopMatch.id).delete();
+                    }
+                }
 
                 await db.collection('spajz_items').add(newItem);
                 await db.collection('spajz_logs').add({ 
@@ -290,6 +413,9 @@
 
             const saveEdit = async (id) => {
                 if (!editName.trim()) return;
+
+                recordActionForUndo();
+
                 const finalEditStorage = editStorage === 'Saját tárolóhely...' ? (editCustomStorageInput.trim() || 'Kamra') : editStorage;
                 const finalEditCategory = editCategory === 'Saját kategória...' ? (editCustomCategoryInput.trim() || 'Egyéb') : editCategory;
                 const finalEditExpiry = editExpiryDays ? calculateExpiryFromDays(editExpiryDays) : editExpiry;
@@ -329,13 +455,16 @@
             };
 
             const markAsPurchased = async (shoppingItem, isPantryList) => {
+                recordActionForUndo();
+
                 if (isPantryList) {
-                    const existingItem = items.find(i => i.name.toLowerCase().trim() === shoppingItem.name.toLowerCase().trim());
+                    const cleanShopName = shoppingItem.name.toLowerCase().trim();
+                    const existingItem = items.find(i => i.name && i.name.toLowerCase().trim() === cleanShopName);
                     const addQty = shoppingItem.qty || 1;
 
                     if (existingItem) {
                         await db.collection('spajz_items').doc(existingItem.id).update({
-                            qty: (existingItem.qty || 0) + addQty
+                            qty: (Number(existingItem.qty) || 0) + addQty
                         });
                         await db.collection('spajz_logs').add({
                             text: `Vásárolva & Feltöltve a spájzba: ${shoppingItem.name} (+${addQty} ${existingItem.unit || 'db'})`,
@@ -367,18 +496,16 @@
                 await db.collection('spajz_custom_shopping').doc(shoppingItem.id).delete();
             };
 
-            const updateQty = async (id, delta, isUndoRedo = false) => {
+            const updateQty = async (id, delta) => {
                 const item = items.find(i => i.id === id);
                 if (!item) return;
-                const oldQty = Number(item.qty) || 0;
-                const newQty = Math.max(0, oldQty + delta);
-                if (oldQty === newQty) return;
 
-                if (!isUndoRedo) {
-                    setUndoStack(prev => [...prev, { id, oldQty, newQty, delta }]);
-                    setRedoStack([]); 
-                }
+                recordActionForUndo();
 
+                const currentQty = Number(item.qty) || 0;
+                const newQty = Math.max(0, currentQty + delta);
+                const itemMin = item.min !== undefined ? Number(item.min) : 0;
+                
                 if (delta < 0) {
                     await db.collection('spajz_logs').add({
                         text: `Fogyasztva / Levonva: ${item.name} (-${Math.abs(delta)} ${item.unit})`,
@@ -396,49 +523,37 @@
                     });
                 }
 
+                const cleanItemName = item.name.toLowerCase().trim();
+                const existingShopMatch = customShoppingItems.find(
+                    si => si.name && si.name.toLowerCase().trim() === cleanItemName
+                );
+
+                // AUTOMATIKUS LISTÁRA ÍRÁS VAGY TÖRLÉS MENNYISÉG ALAPJÁN
+                if ((newQty <= 0 || newQty <= itemMin) && item.autoShopping !== false) {
+                    if (!existingShopMatch) {
+                        await db.collection('spajz_custom_shopping').add({
+                            name: item.name,
+                            qty: Math.max(1, itemMin > 0 ? (itemMin - newQty) : 1),
+                            unit: item.unit || 'db',
+                            storage: item.storage || 'Kamra',
+                            category: item.category || 'Alapanyag',
+                            listId: 'default',
+                            timestamp: Date.now()
+                        });
+                    }
+                } else if (newQty > itemMin) {
+                    // Ha a mennyiség elegendő lett (pl. + gombbal), azonnal töröljük a bevásárlólistáról is!
+                    if (existingShopMatch) {
+                        await db.collection('spajz_custom_shopping').doc(existingShopMatch.id).delete();
+                    }
+                }
+
                 await db.collection('spajz_items').doc(id).update({ qty: newQty });
-            };
-
-            const handleUndo = async () => {
-                if (undoStack.length === 0) return;
-                const lastAction = undoStack[undoStack.length - 1];
-                setUndoStack(prev => prev.slice(0, prev.length - 1));
-                setRedoStack(prev => [...prev, lastAction]);
-
-                const item = items.find(i => i.id === lastAction.id);
-                if (item) {
-                    const currentQty = Number(item.qty) || 0;
-                    const diff = lastAction.oldQty - currentQty;
-                    await updateQty(lastAction.id, diff, true);
-                    await db.collection('spajz_logs').add({
-                        text: `↩️ Visszavonás (Undo): ${item.name} (${currentQty} ➔ ${lastAction.oldQty})`,
-                        date: new Date().toLocaleDateString(),
-                        timestamp: Date.now()
-                    });
-                }
-            };
-
-            const handleRedo = async () => {
-                if (redoStack.length === 0) return;
-                const nextAction = redoStack[redoStack.length - 1];
-                setRedoStack(prev => prev.slice(0, prev.length - 1));
-                setUndoStack(prev => [...prev, nextAction]);
-
-                const item = items.find(i => i.id === nextAction.id);
-                if (item) {
-                    const currentQty = Number(item.qty) || 0;
-                    const diff = nextAction.newQty - currentQty;
-                    await updateQty(nextAction.id, diff, true);
-                    await db.collection('spajz_logs').add({
-                        text: `🔁 Ismétlés (Redo): ${item.name} (${currentQty} ➔ ${nextAction.newQty})`,
-                        date: new Date().toLocaleDateString(),
-                        timestamp: Date.now()
-                    });
-                }
             };
 
             const deletePantryItem = async (id, name) => {
                 if (confirm(`Biztosan törölni szeretnéd ezt a tételt: ${name}?`)) {
+                    recordActionForUndo();
                     await db.collection('spajz_items').doc(id).delete();
                     await db.collection('spajz_logs').add({ 
                         text: `Törölve a spájzból: ${name}`, 
@@ -451,29 +566,6 @@
             const removeCustomShopping = async (id) => {
                 await db.collection('spajz_custom_shopping').doc(id).delete();
             };
-
-            const resetStats = async () => {
-                if (confirm("Biztosan törölni szeretnéd az összes statisztikát és naplóbejegyzést?")) {
-                    const snapshot = await db.collection('spajz_logs').get();
-                    const batch = db.batch();
-                    snapshot.docs.forEach(doc => {
-                        batch.delete(doc.ref);
-                    });
-                    await batch.commit();
-                }
-            };
-
-            // Automatikus bevásárlólista: Ha a készlet 0, FELTÉTELEK NÉLKÜL felkerül (függetlenül az autoShopping beállítástól is)!
-            const lowStockItems = items.filter(i => {
-                const qty = Number(i.qty) || 0;
-                const itemMin = Number(i.min) || 0;
-                const isZero = qty === 0;
-                const isBelowMin = itemMin > 0 && qty < itemMin;
-                
-                if (isZero) return true; // Ha elfogyott, MINDIG rajta van a listán
-                if (isBelowMin && i.autoShopping !== false) return true; // Ha kevés van, az autoShopping engedéllyel rajta van
-                return false;
-            });
 
             const todayStr = new Date().toISOString().split('T')[0];
 
@@ -497,27 +589,13 @@
                 .slice(0, 10);
             const maxConsumed = Math.max(...topConsumedList.map(i => i.count), 1);
 
-            const getPriorityScore = (item) => {
-                const qty = Number(item.qty) || 0;
-                const itemMin = Number(item.min) || 0;
-                const isCritical = qty === 0; 
-                const isLow = itemMin > 1 && qty > 0 && qty < itemMin;
-                if (isCritical) return 2; 
-                if (isLow) return 1;      
-                return 0;                 
-            };
-
             const filteredItems = items
                 .filter(i => storageFilter === 'Összes' || i.storage === storageFilter)
                 .filter(i => selectedCategory === 'Összes' || i.category === selectedCategory)
                 .filter(i => i.name && i.name.toLowerCase().includes(searchTerm.toLowerCase()))
                 .sort((a, b) => {
-                    const scoreA = getPriorityScore(a);
-                    const scoreB = getPriorityScore(b);
-                    if (scoreA !== scoreB) {
-                        return scoreB - scoreA; 
-                    }
-
+                    const qtyA = Number(a.qty) || 0;
+                    const qtyB = Number(b.qty) || 0;
                     if (sortBy === 'abc') {
                         return (a.name || '').localeCompare(b.name || '');
                     } else if (sortBy === 'abc-rev') {
@@ -526,6 +604,10 @@
                         return (b.timestamp || 0) - (a.timestamp || 0);
                     } else if (sortBy === 'oldest') {
                         return (a.timestamp || 0) - (b.timestamp || 0);
+                    } else if (sortBy === 'qty-asc') {
+                        return qtyA - qtyB || (a.name || '').localeCompare(b.name || '');
+                    } else if (sortBy === 'qty-desc') {
+                        return qtyB - qtyA || (a.name || '').localeCompare(b.name || '');
                     }
                     return 0;
                 });
@@ -541,7 +623,7 @@
             const navBg = darkMode ? 'bg-gray-900 border-gray-800' : 'bg-white border-gray-200';
 
             return (
-                <div className={`max-w-md mx-auto p-4 min-h-screen flex flex-col justify-between ${bgClass}`}>
+                <div className={`max-w-md md:max-w-4xl lg:max-w-5xl mx-auto p-4 md:p-6 min-h-screen flex flex-col justify-between ${bgClass}`}>
                     <div>
                         {/* Fejléc */}
                         <header className="bg-emerald-700 text-white p-4 rounded-2xl shadow-lg mb-4 flex justify-between items-center">
@@ -564,9 +646,9 @@
                         </header>
 
                         {/* Figyelmeztető sáv */}
-                        {(lowStockItems.length > 0 || customShoppingItems.length > 0) && (
+                        {customShoppingItems.length > 0 && (
                             <div className={`border-l-4 p-3 rounded-xl mb-4 shadow-sm text-xs flex justify-between items-center ${darkMode ? 'bg-amber-950/60 border-amber-500 text-amber-200' : 'bg-amber-50 border-amber-500 text-amber-800'}`}>
-                                <span><span className="font-bold">⚠️ Bevásárlólista:</span> {lowStockItems.length + customShoppingItems.length} tétel vár megvételre!</span>
+                                <span><span className="font-bold">⚠️ Bevásárlólista:</span> {customShoppingItems.length} tétel vár megvételre!</span>
                                 <button onClick={() => setActiveTab('shopping')} className="font-bold underline">Megnézem</button>
                             </div>
                         )}
@@ -574,7 +656,7 @@
                         {/* SPÁJZ NÉZET */}
                         {activeTab === 'inventory' && (
                             <div>
-                                <div className="mb-2.5 flex gap-2">
+                                <div className="mb-2.5 flex gap-2 justify-between items-center">
                                     <input 
                                         type="text" 
                                         placeholder="Keresés a spájzban..." 
@@ -582,24 +664,24 @@
                                         onChange={(e) => setSearchTerm(e.target.value)}
                                         className={`w-full p-2.5 border rounded-xl text-sm shadow-sm ${inputBg}`}
                                     />
-                                </div>
-
-                                {/* UNDO / REDO GOMBOK */}
-                                <div className="flex gap-2 mb-2.5">
-                                    <button 
-                                        onClick={handleUndo} 
-                                        disabled={undoStack.length === 0}
-                                        className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold border flex items-center justify-center gap-1 shadow-sm transition-all ${undoStack.length === 0 ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90'} ${darkMode ? 'bg-gray-900 border-gray-800 text-gray-200' : 'bg-white border-gray-200 text-gray-700'}`}
-                                    >
-                                        ↩️ Visszavonás ({undoStack.length})
-                                    </button>
-                                    <button 
-                                        onClick={handleRedo} 
-                                        disabled={redoStack.length === 0}
-                                        className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-bold border flex items-center justify-center gap-1 shadow-sm transition-all ${redoStack.length === 0 ? 'opacity-40 cursor-not-allowed' : 'hover:opacity-90'} ${darkMode ? 'bg-gray-900 border-gray-800 text-gray-200' : 'bg-white border-gray-200 text-gray-700'}`}
-                                    >
-                                        🔁 Ismétlés ({redoStack.length})
-                                    </button>
+                                    <div className="flex gap-1">
+                                        <button 
+                                            onClick={undo} 
+                                            disabled={undoStack.length === 0} 
+                                            className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${undoStack.length === 0 ? 'opacity-40 cursor-not-allowed ' + (darkMode ? 'bg-gray-900 border-gray-800 text-gray-600' : 'bg-gray-100 border-gray-200 text-gray-400') : (darkMode ? 'bg-gray-800 border-gray-700 text-emerald-400 hover:bg-gray-700' : 'bg-white border-gray-200 text-emerald-700 hover:bg-emerald-50')}`}
+                                            title="Visszavonás (Undo)"
+                                        >
+                                            ↩️
+                                        </button>
+                                        <button 
+                                            onClick={redo} 
+                                            disabled={redoStack.length === 0} 
+                                            className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all ${redoStack.length === 0 ? 'opacity-40 cursor-not-allowed ' + (darkMode ? 'bg-gray-900 border-gray-800 text-gray-600' : 'bg-gray-100 border-gray-200 text-gray-400') : (darkMode ? 'bg-gray-800 border-gray-700 text-emerald-400 hover:bg-gray-700' : 'bg-white border-gray-200 text-emerald-700 hover:bg-emerald-50')}`}
+                                            title="Ismétlés (Redo)"
+                                        >
+                                            ↪️
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div className="space-y-1.5 mb-3">
@@ -634,6 +716,8 @@
                                             <option value="oldest">⏳ Legrégebbi elöl</option>
                                             <option value="abc">🔤 ABC (A-Z)</option>
                                             <option value="abc-rev">🔠 ABC fordítva (Z-A)</option>
+                                            <option value="qty-asc">📊 Mennyiség: Legkevesebb elöl</option>
+                                            <option value="qty-desc">📈 Mennyiség: Legtöbb elöl</option>
                                         </select>
                                     </div>
                                 </div>
@@ -719,9 +803,9 @@
                                     )}
                                 </div>
 
-                                <div className="space-y-2.5">
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                     {filteredItems.length === 0 ? (
-                                        <div className={`text-center py-8 rounded-2xl border ${cardBg}`}>
+                                        <div className={`col-span-full text-center py-8 rounded-2xl border ${cardBg}`}>
                                             <p className={`text-sm ${subText}`}>Nincs találat a szűrésnek megfelelő tételre!</p>
                                             <p className={`text-xs mt-1 ${subText}`}>Vegyél fel új tételeket fent vagy a ➕ menüpontban.</p>
                                         </div>
@@ -730,23 +814,27 @@
                                             const isExpanded = expandedItemId === item.id;
                                             const isEditing = editingItemId === item.id;
                                             const isExpired = item.expiryDate && item.expiryDate.trim() !== '' && item.expiryDate < todayStr;
-                                            const itemMin = Number(item.min) || 0;
-                                            const itemQty = Number(item.qty) || 0;
                                             
-                                            const isCritical = itemQty === 0;
-                                            const isLow = itemMin > 1 && itemQty > 0 && itemQty < itemMin;
+                                            const itemMin = item.min !== undefined ? Number(item.min) : 0;
+                                            const currentQty = Number(item.qty) || 0;
+                                            const isZero = currentQty <= 0;
+                                            const isBelowMin = itemMin > 0 && currentQty <= itemMin;
+                                            const isLow = isBelowMin && !isZero;
+                                            const isOutOfStock = isZero;
                                             
                                             let cardStyle = cardBg;
-                                            if (isExpired || isCritical) {
+                                            if (isExpired) {
+                                                cardStyle = darkMode ? "bg-red-950/50 border-red-900 text-gray-100" : "bg-red-50 border-red-200 text-gray-900";
+                                            } else if (isOutOfStock) {
                                                 cardStyle = darkMode ? "bg-red-950/50 border-red-900 text-gray-100" : "bg-red-50 border-red-200 text-gray-900";
                                             } else if (isLow) {
-                                                cardStyle = darkMode ? "bg-amber-950/40 border-amber-900 text-gray-100" : "bg-amber-50 border-amber-200 text-gray-900";
+                                                cardStyle = darkMode ? "bg-amber-950/50 border-amber-900 text-gray-100" : "bg-amber-50 border-amber-200 text-gray-900";
                                             }
 
                                             return (
-                                                <div key={item.id} className={`p-3.5 rounded-xl shadow-sm border ${cardStyle}`}>
+                                                <div key={item.id} className={`p-3.5 rounded-xl shadow-sm border flex flex-col justify-between ${cardStyle}`}>
                                                     {isEditing ? (
-                                                        <div className={`space-y-3 p-2.5 rounded-lg border ${darkMode ? 'bg-gray-900 border-amber-800' : 'bg-white/90 border-amber-200'}`}>
+                                                        <div className={`space-y-3 p-3 rounded-xl border ${darkMode ? 'bg-gray-950 border-amber-800 text-gray-100' : 'bg-white border-amber-200 text-gray-900'}`}>
                                                             <h4 className="text-xs font-bold text-amber-500">✏️ Tétel szerkesztése</h4>
                                                             <div>
                                                                 <label className={`text-[10px] block ${subText}`}>Név</label>
@@ -786,7 +874,7 @@
                                                                     <input type="text" value={editUnit} onChange={e => setEditUnit(e.target.value)} className={`w-full p-2 border rounded-lg text-xs ${inputBg}`} />
                                                                 </div>
                                                                 <div>
-                                                                    <label className={`text-[10px] block ${subText}`}>Min. készlet</label>
+                                                                    <label className={`text-[10px] block ${subText}`}>Min. készlet (0-tól)</label>
                                                                     <div className="flex gap-1 items-center">
                                                                         <button type="button" onClick={() => setEditMin(Math.max(0, Number(editMin) - 1))} className={`w-7 h-7 rounded font-bold ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>-</button>
                                                                         <input type="number" min="0" value={editMin} onChange={e => setEditMin(e.target.value)} className={`w-full p-1 border rounded text-xs text-center ${inputBg}`} />
@@ -808,7 +896,7 @@
                                                         </div>
                                                     ) : (
                                                         <div>
-                                                            <div className="flex justify-between items-center">
+                                                            <div className="flex justify-between items-start">
                                                                 <div className="cursor-pointer flex-1" onClick={() => setExpandedItemId(isExpanded ? null : item.id)}>
                                                                     <div className="flex items-center gap-2 flex-wrap">
                                                                         <h3 className="font-semibold text-sm">{item.name}</h3>
@@ -816,23 +904,21 @@
                                                                         <span className={`text-[10px] px-2 py-0.5 rounded-md font-medium ${darkMode ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-emerald-100 text-emerald-800'}`}>{getStorageIcon(item.storage)} {item.storage || 'Kamra'}</span>
                                                                         <span className={`text-[10px] px-2 py-0.5 rounded-md ${darkMode ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>{item.category}</span>
                                                                         {isExpired && <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-md font-bold animate-pulse">LEJÁRT!</span>}
-                                                                        {isCritical && !isExpired && <span className="text-[10px] bg-red-500 text-white px-2 py-0.5 rounded-md font-bold animate-pulse">ELFOGYOTT!</span>}
-                                                                        {isLow && !isExpired && <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-md font-bold">KEVÉS</span>}
+                                                                        {isOutOfStock && <span className="text-[10px] bg-red-600 text-white px-2 py-0.5 rounded-md font-bold animate-pulse">ELFOGYOTT!</span>}
+                                                                        {isLow && <span className="text-[10px] bg-amber-500 text-white px-2 py-0.5 rounded-md font-bold animate-pulse">KEVÉS!</span>}
                                                                     </div>
                                                                     
-                                                                    {/* KÉSZLET ÉS LEJÁRAT A FŐ KÁRTYÁN */}
-                                                                    <div className="flex justify-between items-center mt-1 pr-2">
+                                                                    <div className="flex justify-between items-center mt-1.5 pr-2">
                                                                         <p className={`text-xs ${subText}`}>
-                                                                            Készlet: <span className={isCritical ? "text-red-500 font-bold" : isLow ? "text-amber-500 font-bold" : "text-emerald-500 font-bold"}>{itemQty} {item.unit}</span> (Min: {itemMin})
+                                                                            Készlet: <span className={isOutOfStock ? "text-red-500 font-bold" : isLow ? "text-amber-500 font-bold" : "text-emerald-500 font-bold"}>{currentQty} {item.unit}</span> (Min: {itemMin})
                                                                         </p>
                                                                         <div className="flex gap-2 text-[10px]">
                                                                             <span className={isExpired ? "text-red-500 font-bold" : subText}>⏳ {item.expiryDate ? item.expiryDate : 'Nincs lejárat'}</span>
-                                                                            <span className="text-gray-400">📅 {item.addedDate || ''}</span>
                                                                         </div>
                                                                     </div>
                                                                 </div>
 
-                                                                <div className="flex items-center gap-1.5 ml-2">
+                                                                <div className="flex items-center gap-1 ml-2">
                                                                     <button onClick={() => updateQty(item.id, -1)} className={`w-8 h-8 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 hover:bg-gray-700 text-gray-200' : 'bg-gray-100 hover:bg-gray-200 text-gray-800'}`}>-</button>
                                                                     <button onClick={() => updateQty(item.id, 1)} className={`w-8 h-8 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 hover:bg-emerald-900' : 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200'}`}>+</button>
                                                                 </div>
@@ -843,8 +929,8 @@
                                                             </button>
 
                                                             {isExpanded && (
-                                                                <div className={`mt-3 pt-3 border-t p-2.5 rounded-lg text-xs space-y-2 ${darkMode ? 'border-gray-800 bg-gray-950/40' : 'border-gray-100 bg-white/60'}`}>
-                                                                    <div className="pt-2 flex justify-between items-center">
+                                                                <div className={`mt-3 pt-3 border-t p-3 rounded-xl text-xs space-y-2 ${darkMode ? 'border-gray-800 bg-gray-950 text-gray-100' : 'border-gray-100 bg-white text-gray-900'}`}>
+                                                                    <div className="flex justify-between items-center">
                                                                         <button onClick={() => startEditing(item)} className={`px-3 py-1 rounded-md text-xs font-medium border ${darkMode ? 'bg-emerald-950/60 text-emerald-300 border-emerald-800' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>✏️ Szerkesztés</button>
                                                                         <button onClick={() => deletePantryItem(item.id, item.name)} className="bg-red-500/20 text-red-400 px-3 py-1 rounded-md text-xs font-medium hover:bg-red-500/30">🗑️ Tétel törlése</button>
                                                                     </div>
@@ -967,9 +1053,12 @@
                                         </form>
                                     )}
 
-                                    {currentListCustomItems.length > 0 && (
-                                        <div className="mb-4">
-                                            <h3 className={`text-xs font-bold mb-2 uppercase ${subText}`}>📝 Listán lévő tételek</h3>
+                                    {/* Listán lévő tételek */}
+                                    <div>
+                                        <h3 className={`text-xs font-bold mb-2 uppercase ${subText}`}>📝 Listán lévő tételek</h3>
+                                        {currentListCustomItems.length === 0 ? (
+                                            <p className={`text-xs py-2 ${subText}`}>A lista jelenleg üres. (Ha egy spájz tétel elfogy vagy 0 lesz, automatikusan idekerül!)</p>
+                                        ) : (
                                             <div className="space-y-2">
                                                 {currentListCustomItems.map(item => (
                                                     <div key={item.id} className={`flex justify-between items-center p-3 rounded-xl border ${darkMode ? 'bg-purple-950/40 border-purple-900 text-purple-200' : 'bg-purple-50 border-purple-100 text-purple-900'}`}>
@@ -993,41 +1082,8 @@
                                                     </div>
                                                 ))}
                                             </div>
-                                        </div>
-                                    )}
-
-                                    {isPantryList && (
-                                        <div>
-                                            <h3 className={`text-xs font-bold mb-2 uppercase ${subText}`}>📦 Automatikusan hiányzó / elfogyott spájz tételek</h3>
-                                            {lowStockItems.length === 0 ? (
-                                                <p className={`text-xs py-2 ${subText}`}>Mindenből van elég a spájzban (vagy a készlet eléri a min. szintet)!</p>
-                                            ) : (
-                                                <div className="space-y-2">
-                                                    {lowStockItems.map(item => {
-                                                        const itemMin = Number(item.min) || 0;
-                                                        const itemQty = Number(item.qty) || 0;
-                                                        const neededQty = itemMin > 0 ? Math.max(1, itemMin - itemQty) : 1;
-                                                        return (
-                                                            <div key={item.id} className={`flex justify-between items-center p-3 rounded-xl border ${darkMode ? 'bg-red-950/40 border-red-900 text-red-200' : 'bg-red-50 border-red-100 text-red-900'}`}>
-                                                                <div>
-                                                                    <h4 className="font-semibold text-sm">{item.name}</h4>
-                                                                    <p className={`text-xs ${darkMode ? 'text-red-400' : 'text-red-600'}`}>Jelenleg: {itemQty} {item.unit} (Min: {itemMin}) — Kell: <span className="font-bold">{neededQty} {item.unit}</span></p>
-                                                                </div>
-                                                                <div className="flex items-center gap-1.5">
-                                                                    <button onClick={() => updateQty(item.id, neededQty)} className="bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-750">
-                                                                        + Feltöltve ({neededQty})
-                                                                    </button>
-                                                                    <button onClick={() => db.collection('spajz_items').doc(item.id).update({ autoShopping: false })} className="text-xs bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300 px-2 py-1.5 rounded-lg" title="Levétel a listáról">
-                                                                        ✕
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -1100,7 +1156,7 @@
                                                 )}
                                             </div>
                                             <div>
-                                                <label className={`block text-xs font-medium mb-1 ${subText}`}>Min. készlet</label>
+                                                <label className={`block text-xs font-medium mb-1 ${subText}`}>Min. készlet (0-tól)</label>
                                                 <div className="flex gap-1 items-center">
                                                     <button type="button" onClick={() => setNewMin(Math.max(0, Number(newMin) - 1))} className={`w-8 h-9 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>-</button>
                                                     <input type="number" min="0" value={newMin} onChange={e => setNewMin(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm text-center ${inputBg}`} />
@@ -1119,7 +1175,7 @@
 
                                         <div className={`flex items-center gap-2 p-3 rounded-xl border ${darkMode ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
                                             <input type="checkbox" id="autoShopping" checked={newAutoShopping} onChange={e => setNewAutoShopping(e.target.checked)} className="w-4 h-4 text-emerald-600 rounded" />
-                                            <label htmlFor="autoShopping" className={`text-xs cursor-pointer ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Kerüljön a bevásárlólistára, ha elfogy vagy kevés van belőle</label>
+                                            <label htmlFor="autoShopping" className={`text-xs cursor-pointer ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Kerüljön a bevásárlólistára, ha kevés van belőle</label>
                                         </div>
 
                                         <button type="submit" className="w-full bg-emerald-600 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-emerald-700 mt-2">Mentés a felhőbe</button>
@@ -1149,11 +1205,10 @@
                                             <span>🔥</span> Top 10 Legtöbbet Fogyó Élelmiszer
                                         </h2>
                                         <button 
-                                            onClick={resetStats} 
-                                            className="text-[10px] bg-red-500/20 text-red-400 px-2 py-1 rounded-lg font-bold hover:bg-red-500/30 transition-all"
-                                            title="Statisztika és napló törlése"
+                                            onClick={resetLogs} 
+                                            className="text-[10px] bg-red-500/20 text-red-400 hover:bg-red-500/30 px-2 py-1 rounded-lg font-bold"
                                         >
-                                            🗑️ Nullázás
+                                            🗑️ Lista nullázása
                                         </button>
                                     </div>
                                     <p className={`text-xs mb-3 ${subText}`}>A spájzból a legtöbbször levont és felhasznált alapanyagok</p>
@@ -1196,22 +1251,21 @@
                                     ) : (
                                         <div className="space-y-3">
                                             {items.map(item => {
-                                                const itemQty = Number(item.qty) || 0;
-                                                const percentage = Math.min(100, Math.max(8, (itemQty / maxQtyInPantry) * 100));
-                                                const itemMin = Number(item.min) || 0;
-                                                const isCritical = itemQty === 0;
-                                                const isLow = itemMin > 1 && itemQty > 0 && itemQty < itemMin;
-                                                const isZero = itemQty <= 0;
+                                                const qtyVal = Number(item.qty) || 0;
+                                                const percentage = Math.min(100, Math.max(8, (qtyVal / maxQtyInPantry) * 100));
+                                                const itemMin = item.min !== undefined ? Number(item.min) : 0;
+                                                const isLow = itemMin > 0 && qtyVal <= itemMin;
+                                                const isZero = qtyVal <= 0;
 
                                                 let barColor = "bg-emerald-500";
-                                                if (isZero || isCritical) barColor = "bg-red-500";
+                                                if (isZero) barColor = "bg-red-500";
                                                 else if (isLow) barColor = "bg-amber-500";
 
                                                 return (
                                                     <div key={item.id} className="space-y-1">
                                                         <div className="flex justify-between items-center text-xs">
                                                             <span className={`font-semibold ${darkMode ? 'text-gray-200' : 'text-gray-800'}`}>{item.name} <span className="text-[10px] text-gray-500">({getStorageIcon(item.storage)} {item.storage})</span></span>
-                                                            <span className="font-bold text-emerald-500">{itemQty} {item.unit}</span>
+                                                            <span className="font-bold text-emerald-500">{qtyVal} {item.unit}</span>
                                                         </div>
                                                         <div className={`w-full h-3 rounded-full overflow-hidden flex items-center ${darkMode ? 'bg-gray-800' : 'bg-gray-100'}`}>
                                                             <div 
@@ -1266,15 +1320,15 @@
                     </div>
 
                     {/* Navigációs sáv */}
-                    <nav className={`fixed bottom-0 left-0 right-0 border-t py-2.5 px-4 flex justify-around items-center max-w-md mx-auto shadow-lg rounded-t-2xl ${navBg}`}>
+                    <nav className={`fixed bottom-0 left-0 right-0 border-t py-2.5 px-4 flex justify-around items-center max-w-md md:max-w-4xl lg:max-w-5xl mx-auto shadow-lg rounded-t-2xl ${navBg}`}>
                         <button onClick={() => setActiveTab('inventory')} className={`flex flex-col items-center text-xs font-medium ${activeTab === 'inventory' ? 'text-emerald-500' : 'text-gray-500'}`}>
                             <span>📦 Spájz</span>
                         </button>
                         <button onClick={() => setActiveTab('shopping')} className={`flex flex-col items-center text-xs font-medium relative ${activeTab === 'shopping' ? 'text-emerald-500' : 'text-gray-500'}`}>
                             <span>🛒 Lista</span>
-                            {(lowStockItems.length + customShoppingItems.length) > 0 && (
+                            {customShoppingItems.length > 0 && (
                                 <span className="absolute -top-1 -right-2 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
-                                    {lowStockItems.length + customShoppingItems.length}
+                                    {customShoppingItems.length}
                                 </span>
                             )}
                         </button>

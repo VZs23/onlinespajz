@@ -213,7 +213,6 @@
                 }
                 await batch.commit();
 
-                // Automatikus lista tisztítás Undo esetén, ha a készlet elegendő lett
                 for (const prevItem of previousState) {
                     const pQty = Number(prevItem.qty) || 0;
                     const pMin = prevItem.min !== undefined ? Number(prevItem.min) : 0;
@@ -560,7 +559,6 @@
                     si => si.name && si.name.toLowerCase().trim() === cleanItemName
                 );
 
-                // Elegendő készlet vizsgálata: min > 0 esetén newQty >= min, egyébként newQty >= 1
                 const hasEnough = itemMin > 0 ? (newQty >= itemMin) : (newQty >= 1);
 
                 if (!hasEnough && item.autoShopping !== false) {
@@ -576,7 +574,6 @@
                         });
                     }
                 } else if (hasEnough) {
-                    // Ha annyi van mint a minimum/készlet vagy több, azonnal eltávolítjuk a listáról!
                     if (existingShopMatch) {
                         await db.collection('spajz_custom_shopping').doc(existingShopMatch.id).delete();
                     }
@@ -718,8 +715,9 @@
                                     </div>
                                 </div>
 
-                                <div className="space-y-1.5 mb-3">
-                                    <div className="flex gap-1.5 overflow-x-auto pb-1">
+                                <div className="space-y-2 mb-3">
+                                    {/* Tárolóhelyek gombsor - flex-wrap-el, hogy új sorba törjön ha kell */}
+                                    <div className="flex flex-wrap gap-1.5 pb-1">
                                         {allStorageLocations.map(loc => (
                                             <button
                                                 key={loc}
@@ -731,7 +729,8 @@
                                         ))}
                                     </div>
 
-                                    <div className="flex gap-1.5 overflow-x-auto pb-1">
+                                    {/* Kategóriák gombsor - flex-wrap-el, hogy új sorba törjön ha kell */}
+                                    <div className="flex flex-wrap gap-1.5 pb-1">
                                         {allCategories.map(cat => (
                                             <button
                                                 key={cat}
@@ -825,11 +824,19 @@
                                                     </div>
                                                 </div>
                                                 <div>
-                                                    <label className={`text-[10px] block ${subText}`}>Lejárati idő (Napi gyorsválasztó)</label>
-                                                    <div className="flex gap-1">
-                                                        <input type="number" min="1" placeholder="pl. 7 nap" value={expiryDays} onChange={e => { setExpiryDays(e.target.value); setNewExpiry(''); }} className={`w-1/2 p-2 border rounded-xl text-xs ${inputBg}`} title="Hány nap múlva jár le?" />
-                                                        <input type="date" value={newExpiry} onChange={e => { setNewExpiry(e.target.value); setExpiryDays(''); }} className={`w-1/2 p-2 border rounded-xl text-xs ${inputBg}`} title="Vagy pontos dátum" />
+                                                    <label className={`text-[10px] block ${subText}`}>Min. készlet (0-tól)</label>
+                                                    <div className="flex gap-1 items-center">
+                                                        <button type="button" onClick={() => setNewMin(Math.max(0, Number(newMin) - 1))} className={`w-7 h-8 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>-</button>
+                                                        <input type="number" min="0" value={newMin} onChange={e => setNewMin(e.target.value)} className={`w-full p-2 border rounded-xl text-xs text-center ${inputBg}`} />
+                                                        <button type="button" onClick={() => setNewMin(Number(newMin) + 1)} className={`w-7 h-8 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>+</button>
                                                     </div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className={`text-[10px] block ${subText}`}>Lejárati idő (Napi gyorsválasztó)</label>
+                                                <div className="flex gap-1">
+                                                    <input type="number" min="1" placeholder="pl. 7 nap" value={expiryDays} onChange={e => { setExpiryDays(e.target.value); setNewExpiry(''); }} className={`w-1/2 p-2 border rounded-xl text-xs ${inputBg}`} title="Hány nap múlva jár le?" />
+                                                    <input type="date" value={newExpiry} onChange={e => { setNewExpiry(e.target.value); setExpiryDays(''); }} className={`w-1/2 p-2 border rounded-xl text-xs ${inputBg}`} title="Vagy pontos dátum" />
                                                 </div>
                                             </div>
                                             <button type="submit" className="w-full bg-emerald-600 text-white text-xs py-2 rounded-xl font-bold hover:bg-emerald-700">Mentés közvetlenül ide</button>
@@ -1008,7 +1015,7 @@
                                             </form>
                                         )}
 
-                                        <div className="flex gap-2 overflow-x-auto pb-1">
+                                        <div className="flex flex-wrap gap-2 pb-1">
                                             {shoppingLists.map(list => (
                                                 <button
                                                     key={list.id}

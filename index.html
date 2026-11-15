@@ -442,7 +442,6 @@
                 await db.collection('spajz_custom_shopping').doc(id).delete();
             };
 
-            // KÉSZLETFIGYELÉS: 0-nál ELFOGYOTT, min alatt KEVÉS!
             const lowStockItems = items.filter(i => {
                 const itemMin = i.min !== undefined ? i.min : 1;
                 const isZero = i.qty <= 0;
@@ -623,25 +622,26 @@
                                             </div>
                                         </div>
 
+                                        {/* TÁROLÓHELY ÉS KATEGÓRIA SZŰRŐK - Új sorba tördeléssel (nincs vízszintes görgetés) */}
                                         <div className="space-y-2 mb-4">
-                                            <div className="flex gap-1.5 overflow-x-auto pb-1">
+                                            <div className="flex flex-wrap gap-1.5 pb-1">
                                                 {allStorageLocations.map(loc => (
                                                     <button
                                                         key={loc}
                                                         onClick={() => setStorageFilter(loc)}
-                                                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${storageFilter === loc ? 'bg-emerald-700 text-white shadow-sm' : darkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                                                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${storageFilter === loc ? 'bg-emerald-700 text-white shadow-sm' : darkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
                                                     >
                                                         {getStorageIcon(loc)} {loc}
                                                     </button>
                                                 ))}
                                             </div>
 
-                                            <div className="flex gap-1.5 overflow-x-auto pb-1">
+                                            <div className="flex flex-wrap gap-1.5 pb-1">
                                                 {allCategories.map(cat => (
                                                     <button
                                                         key={cat}
                                                         onClick={() => setSelectedCategory(cat)}
-                                                        className={`px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-all ${selectedCategory === cat ? 'bg-emerald-600 text-white shadow-sm' : darkMode ? 'bg-gray-800/80 text-gray-300 hover:bg-gray-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+                                                        className={`px-3 py-1 rounded-full text-xs font-medium transition-all ${selectedCategory === cat ? 'bg-emerald-600 text-white shadow-sm' : darkMode ? 'bg-gray-800/80 text-gray-300 hover:bg-gray-800' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
                                                     >
                                                         {cat}
                                                     </button>
@@ -758,7 +758,6 @@
                                                     const isExpired = item.expiryDate && item.expiryDate.trim() !== '' && item.expiryDate < todayStr;
                                                     const itemMin = item.min !== undefined ? item.min : 1;
                                                     
-                                                    // Kettős állapot: 0 = Elfogyott, 0-nál több, de min alatt = Kevés
                                                     const isZero = item.qty <= 0;
                                                     const isLow = !isZero && item.qty <= itemMin;
                                                     const isBontott = item.status === 'bontott';
@@ -930,12 +929,12 @@
                                                     </form>
                                                 )}
 
-                                                <div className="flex gap-2 overflow-x-auto pb-1">
+                                                <div className="flex flex-wrap gap-2 pb-1">
                                                     {shoppingLists.map(list => (
                                                         <button
                                                             key={list.id}
                                                             onClick={() => setActiveListId(list.id)}
-                                                            className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition-all ${activeListId === list.id ? 'bg-emerald-600 text-white shadow-md' : darkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                                                            className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${activeListId === list.id ? 'bg-emerald-600 text-white shadow-md' : darkMode ? 'bg-gray-800 text-gray-300 hover:bg-gray-700' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
                                                         >
                                                             <span>{list.type === 'pantry' ? '📦' : '📝'}</span>
                                                             <span>{list.name}</span>

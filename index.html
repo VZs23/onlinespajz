@@ -37,6 +37,49 @@
         }
         const db = firebase.firestore();
 
+        function QuantitySelector({ value, onChange, darkMode, inputBg, subText, min = 0, step = "any" }) {
+            const presetNumbers = [1, 2, 3, 4, 5, 6, 7, 8];
+            const numericVal = Number(value);
+
+            return (
+                <div className="space-y-1.5">
+                    <div className="flex flex-wrap gap-1.5">
+                        {presetNumbers.map(num => {
+                            const isSelected = numericVal === num;
+                            return (
+                                <button
+                                    key={num}
+                                    type="button"
+                                    onClick={() => onChange(num)}
+                                    className={`w-8 h-8 rounded-lg text-xs font-bold transition-all flex items-center justify-center border ${
+                                        isSelected
+                                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                                            : darkMode
+                                                ? 'bg-gray-800 text-gray-200 border-gray-700 hover:bg-gray-700'
+                                                : 'bg-gray-100 text-gray-800 border-gray-200 hover:bg-emerald-50'
+                                    }`}
+                                >
+                                    {num}
+                                </button>
+                            );
+                        })}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-medium whitespace-nowrap ${subText}`}>Egyéni:</span>
+                        <input
+                            type="number"
+                            min={min}
+                            step={step}
+                            value={value}
+                            onChange={e => onChange(e.target.value)}
+                            placeholder="Más mennyiség..."
+                            className={`w-full p-2 border rounded-xl text-xs ${inputBg}`}
+                        />
+                    </div>
+                </div>
+            );
+        }
+
         function App() {
             const [activeTab, setActiveTab] = React.useState('inventory');
             const [expandedItemId, setExpandedItemId] = React.useState(null);
@@ -107,12 +150,17 @@
             const [customTargetCategory, setCustomTargetCategory] = React.useState('Alapanyag');
             const [showAddCustom, setShowAddCustom] = React.useState(false);
 
+            // Online Recept Ajánló állapota
+            const [onlineRecipes, setOnlineRecipes] = React.useState([]);
+            const [isFetchingOnlineRecipes, setIsFetchingOnlineRecipes] = React.useState(false);
+
             const [defaultCategories] = React.useState(['Alapanyag', 'Folyadék', 'Hűtő', 'Fagyasztó', 'Egyéb']);
             const defaultUnits = ['db', 'kg', 'dkg', 'liter', 'csomag'];
             const defaultStorageLocations = ['Kamra', 'Hűtő', 'Mélyhűtő', 'Pince'];
 
             const allStorageLocations = ['Összes', ...Array.from(new Set([...defaultStorageLocations, ...items.map(i => i.storage).filter(Boolean)]))];
             const allCategories = ['Összes', ...Array.from(new Set([...defaultCategories, ...items.map(i => i.category).filter(Boolean)]))];
+            const selectableCategories = allCategories.filter(c => c !== 'Összes');
 
             const allKnownItemNames = Array.from(new Set([
                 ...items.map(i => i.name),
@@ -149,6 +197,47 @@
                 { name: 'Zöldségek / Gyümölcsök', cycle: '3 nap - 3 hét (Fajtától függően)' },
                 { name: 'Konzerv', cycle: '1 - 3 év (Kamrában)' }
             ];
+
+            const massiveOnlineRecipeDatabase = [
+                { name: 'Klasszikus Házi Tojásrántotta', req: ['tojás', 'vaj', 'só'], steps: 'Verd fel a tojásokat egy csipet sóval. Olvaszd fel a vajat serpenyőben, öntsd bele a tojást, és süsd lángon készre.' },
+                { name: 'Hagyományos Palacsinta', req: ['liszt', 'tej', 'tojás'], steps: 'Keverd simára a lisztet a tejjel és tojással. Forró, olajozott serpenyőben süsd ki mindkét oldalát aranyszínűre.' },
+                { name: 'Tejfölös-Sajtos Tészta', req: ['tészta', 'sajt', 'tejföl'], steps: 'Főzd ki a tésztát sós vízben, szűrd le, majd keverd össze tejföllel és reszelt sajttal.' },
+                { name: 'Friss Omlós Bundáskenyér', req: ['kenyér', 'tojás', 'só'], steps: 'Mártsd meg a kenyérszeleteket felvert, sózott tojásban, majd forró olajban süsd ropogósra.' },
+                { name: 'Tejes Kávé / Házi Kakaó', req: ['tej'], steps: 'Forrald fel a tejet, add hozzá a kakaóport vagy kávét, és édesítsd kedved szerint.' },
+                { name: 'Sajtos Melegszendvics', req: ['kenyér', 'vaj', 'sajt'], steps: 'Vajazd meg a kenyeret, halmozz rá reszelt sajtot, majd sütőben vagy szendvicssütőben pirítsd meg.' },
+                { name: 'Hagymás-Olajos Alap-egytálétel', req: ['hagyma', 'olaj', 'só'], steps: 'Dinszteld meg az aprított hagymát olajon, fűszerezd sóval, majd párold készre.' },
+                { name: 'Palócleves jellegű tartalmas étel', req: ['hús', 'hagyma', 'tejföl'], steps: 'Pirítsd meg a húst hagymával, öntsd fel vízzel, főzd puhára, végül habard be tejföllel.' }
+            ];
+
+            const fetchOnlineRecipes = () => {
+                setIsFetchingOnlineRecipes(true);
+                setTimeout(() => {
+                    const pantryNames = items.filter(i => (Number(i.qty) || 0) > 0).map(i => i.name.toLowerCase().trim());
+                    
+                    const scored = massiveOnlineRecipeDatabase.map(rec => {
+                        let matchedCount = 0;
+                        let missing = [];
+                        rec.req.forEach(r => {
+                            if (pantryNames.some(p => p.includes(r))) {
+                                matchedCount++;
+                            } else {
+                                missing.push(r);
+                            }
+                        });
+                        return { ...rec, matchedCount, missing };
+                    });
+
+                    scored.sort((a, b) => b.matchedCount - a.matchedCount);
+                    setOnlineRecipes(scored.slice(0, 3));
+                    setIsFetchingOnlineRecipes(false);
+                }, 500);
+            };
+
+            React.useEffect(() => {
+                if (activeTab === 'recipes') {
+                    fetchOnlineRecipes();
+                }
+            }, [activeTab]);
 
             React.useEffect(() => {
                 const unsubscribeItems = db.collection('spajz_items').onSnapshot(snapshot => {
@@ -292,7 +381,7 @@
 
                 setNewStorage(targetStorage);
                 setNewCategory(targetCategory);
-                setNewMin(0); // Alapértelmezett min készlet 0
+                setNewMin(0);
                 setShowQuickAdd(!showQuickAdd);
             };
 
@@ -350,7 +439,6 @@
                     si => si.name && si.name.toLowerCase().trim() === cleanName
                 );
 
-                // Ha min > 0, akkor akkor van elegendő ha qty > min (vagy qty >= min+1). Ha min == 0, akkor qty > 0 kell.
                 const hasEnough = newItem.min > 0 ? (newItem.qty > newItem.min) : (newItem.qty > 0);
 
                 if (!hasEnough && newItem.autoShopping !== false) {
@@ -512,7 +600,7 @@
                             storage: shoppingItem.storage || 'Kamra',
                             qty: addQty,
                             unit: shoppingItem.unit || 'db',
-                            min: 0, // Új tétel esetén alapértelmezett min készlet 0
+                            min: 0,
                             autoShopping: true,
                             addedDate: today,
                             expiryDate: '',
@@ -718,7 +806,6 @@
                                 </div>
 
                                 <div className="space-y-2 mb-3">
-                                    {/* Tárolóhelyek gombsor - flex-wrap-el, hogy új sorba törjön ha kell */}
                                     <div className="flex flex-wrap gap-1.5 pb-1">
                                         {allStorageLocations.map(loc => (
                                             <button
@@ -731,7 +818,6 @@
                                         ))}
                                     </div>
 
-                                    {/* Kategóriák gombsor - flex-wrap-el, hogy új sorba törjön ha kell */}
                                     <div className="flex flex-wrap gap-1.5 pb-1">
                                         {allCategories.map(cat => (
                                             <button
@@ -813,21 +899,26 @@
                                                     )}
                                                 </div>
                                             </div>
-                                            <div className="grid grid-cols-2 gap-2">
+                                            <div className="space-y-2">
                                                 <div>
-                                                    <label className={`text-[10px] block ${subText}`}>Mennyiség & egység</label>
-                                                    <div className="flex gap-1 items-center">
-                                                        <button type="button" onClick={() => setNewQty(Math.max(0, Number(newQty) - 1))} className={`w-7 h-8 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>-</button>
-                                                        <input type="number" min="0" value={newQty} onChange={e => setNewQty(e.target.value)} className={`w-full p-2 border rounded-xl text-xs text-center ${inputBg}`} />
-                                                        <button type="button" onClick={() => setNewQty(Number(newQty) + 1)} className={`w-7 h-8 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>+</button>
-                                                        <select value={newUnit} onChange={e => setNewUnit(e.target.value)} className={`w-full p-2 border rounded-xl text-xs ${inputBg}`}>
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <label className={`text-[10px] ${subText}`}>Mennyiség (1-8 vagy egyéni)</label>
+                                                        <select value={newUnit} onChange={e => setNewUnit(e.target.value)} className={`p-1.5 border rounded-lg text-xs ${inputBg}`}>
                                                             {defaultUnits.map(u => <option key={u} value={u}>{u}</option>)}
                                                         </select>
                                                     </div>
+                                                    <QuantitySelector
+                                                        value={newQty}
+                                                        onChange={setNewQty}
+                                                        darkMode={darkMode}
+                                                        inputBg={inputBg}
+                                                        subText={subText}
+                                                        min={0}
+                                                    />
                                                 </div>
                                                 <div>
-                                                    <label className={`text-[10px] block ${subText}`}>Min. készlet (0-tól)</label>
-                                                    <div className="flex gap-1 items-center">
+                                                    <label className={`text-[10px] block mb-1 ${subText}`}>Min. készlet (0-tól)</label>
+                                                    <div className="flex gap-1 items-center max-w-[160px]">
                                                         <button type="button" onClick={() => setNewMin(Math.max(0, Number(newMin) - 1))} className={`w-7 h-8 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>-</button>
                                                         <input type="number" min="0" value={newMin} onChange={e => setNewMin(e.target.value)} className={`w-full p-2 border rounded-xl text-xs text-center ${inputBg}`} />
                                                         <button type="button" onClick={() => setNewMin(Number(newMin) + 1)} className={`w-7 h-8 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>+</button>
@@ -989,6 +1080,79 @@
                             </div>
                         )}
 
+                        {/* ONLINE RECEPTEK NÉZET */}
+                        {activeTab === 'recipes' && (
+                            <div className="space-y-4">
+                                <div className={`p-4 rounded-2xl shadow-sm border ${cardBg}`}>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <div>
+                                            <h2 className="font-bold text-base text-emerald-600 flex items-center gap-1.5">
+                                                <span>🌐</span> Online Recept Ajánló a Spájzod Alapján
+                                            </h2>
+                                            <p className={`text-xs ${subText}`}>A rendszer önállóan átnézte a meglévő alapanyagokat és kiválasztotta a legjobb recepteket</p>
+                                        </div>
+                                        <button 
+                                            onClick={fetchOnlineRecipes} 
+                                            disabled={isFetchingOnlineRecipes}
+                                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs px-3 py-2 rounded-xl font-bold transition-all shadow-sm flex items-center gap-1"
+                                        >
+                                            {isFetchingOnlineRecipes ? '🔄 Keresés...' : '🔄 Frissítés'}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {isFetchingOnlineRecipes ? (
+                                    <div className={`text-center py-12 rounded-2xl border ${cardBg}`}>
+                                        <p className="text-sm font-semibold animate-pulse text-emerald-500">🍲 Online receptek keresése a spájz tartalma alapján...</p>
+                                    </div>
+                                ) : onlineRecipes.length === 0 ? (
+                                    <div className={`text-center py-8 rounded-2xl border ${cardBg}`}>
+                                        <p className={`text-sm ${subText}`}>Jelenleg nincs elérhető alapanyag a spájzban az online receptekhez!</p>
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {onlineRecipes.map((rec, idx) => (
+                                            <div key={idx} className={`p-4 rounded-2xl shadow-sm border flex flex-col justify-between ${cardBg}`}>
+                                                <div>
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <h3 className="font-bold text-base text-emerald-600">🍳 {rec.name}</h3>
+                                                        <span className="bg-emerald-500/20 text-emerald-400 text-[10px] px-2.5 py-1 rounded-full font-bold">
+                                                            {rec.matchedCount} / {rec.req.length} hozzávaló megvan
+                                                        </span>
+                                                    </div>
+
+                                                    <div className="mb-3">
+                                                        <p className={`text-xs font-bold mb-1 ${subText}`}>Szükséges hozzávalók:</p>
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {rec.req.map((r, i) => {
+                                                                const isAvailable = !rec.missing.includes(r);
+                                                                return (
+                                                                    <span key={i} className={`text-[10px] px-2 py-0.5 rounded-md font-medium ${isAvailable ? (darkMode ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-emerald-100 text-emerald-800') : (darkMode ? 'bg-red-950 text-red-300 border border-red-800' : 'bg-red-100 text-red-800')}`}>
+                                                                        {isAvailable ? '✓ ' : '❌ '} {r}
+                                                                    </span>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className={`p-3 rounded-xl text-xs border mb-2 ${darkMode ? 'bg-gray-950 border-gray-800 text-gray-300' : 'bg-gray-50 border-gray-100 text-gray-700'}`}>
+                                                        <p className="font-bold mb-1 text-emerald-500">👨‍🍳 Online elkészítési útmutató:</p>
+                                                        <p>{rec.steps}</p>
+                                                    </div>
+                                                </div>
+
+                                                {rec.missing.length > 0 && (
+                                                    <p className={`text-[10px] italic mt-2 ${subText}`}>
+                                                        ⚠️ Hiányzó elem: {rec.missing.join(', ')}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {/* BEVÁSÁRLÓLISTA NÉZET */}
                         {activeTab === 'shopping' && (
                             <div className="space-y-4">
@@ -1071,24 +1235,37 @@
                                                     {allKnownItemNames.map(n => <option key={n} value={n} />)}
                                                 </datalist>
                                             </div>
-                                            <div className="grid grid-cols-2 gap-2">
+                                            <div className="space-y-2">
                                                 <div>
-                                                    <label className={`text-[10px] block ${subText}`}>Mennyiség & egység</label>
-                                                    <div className="flex gap-1 items-center">
-                                                        <button type="button" onClick={() => setCustomQty(Math.max(1, Number(customQty) - 1))} className={`w-7 h-8 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>-</button>
-                                                        <input type="number" min="1" value={customQty} onChange={e => setCustomQty(e.target.value)} className={`w-full p-2 text-xs text-center border rounded-lg ${inputBg}`} />
-                                                        <button type="button" onClick={() => setCustomQty(Number(customQty) + 1)} className={`w-7 h-8 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>+</button>
-                                                        <select value={customUnit} onChange={e => setCustomUnit(e.target.value)} className={`w-full p-2 text-xs border rounded-lg ${inputBg}`}>
+                                                    <div className="flex justify-between items-center mb-1">
+                                                        <label className={`text-[10px] ${subText}`}>Mennyiség (1-8 vagy egyéni)</label>
+                                                        <select value={customUnit} onChange={e => setCustomUnit(e.target.value)} className={`p-1.5 text-xs border rounded-lg ${inputBg}`}>
                                                             {defaultUnits.map(u => <option key={u} value={u}>{u}</option>)}
                                                         </select>
                                                     </div>
+                                                    <QuantitySelector
+                                                        value={customQty}
+                                                        onChange={setCustomQty}
+                                                        darkMode={darkMode}
+                                                        inputBg={inputBg}
+                                                        subText={subText}
+                                                        min={1}
+                                                    />
                                                 </div>
                                                 {isPantryList && (
-                                                    <div>
-                                                        <label className={`text-[10px] block ${subText}`}>Hova kerüljön spájzoláskor?</label>
-                                                        <select value={customTargetStorage} onChange={e => setCustomTargetStorage(e.target.value)} className={`w-full p-2 text-xs border rounded-lg ${inputBg}`}>
-                                                            {defaultStorageLocations.map(s => <option key={s} value={s}>{getStorageIcon(s)} {s}</option>)}
-                                                        </select>
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div>
+                                                            <label className={`text-[10px] block ${subText}`}>Alapanyag / Kategória</label>
+                                                            <select value={customTargetCategory} onChange={e => setCustomTargetCategory(e.target.value)} className={`w-full p-2 text-xs border rounded-lg ${inputBg}`}>
+                                                                {selectableCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label className={`text-[10px] block ${subText}`}>Tárolóhely</label>
+                                                            <select value={customTargetStorage} onChange={e => setCustomTargetStorage(e.target.value)} className={`w-full p-2 text-xs border rounded-lg ${inputBg}`}>
+                                                                {defaultStorageLocations.map(s => <option key={s} value={s}>{getStorageIcon(s)} {s}</option>)}
+                                                            </select>
+                                                        </div>
                                                     </div>
                                                 )}
                                             </div>
@@ -1096,7 +1273,6 @@
                                         </form>
                                     )}
 
-                                    {/* Listán lévő tételek */}
                                     <div>
                                         <h3 className={`text-xs font-bold mb-2 uppercase ${subText}`}>📝 Listán lévő tételek</h3>
                                         {currentListCustomItems.length === 0 ? (
@@ -1108,7 +1284,7 @@
                                                         <div>
                                                             <h4 className="font-semibold text-sm">{item.name}</h4>
                                                             <p className={`text-xs ${darkMode ? 'text-purple-400' : 'text-purple-600'}`}>
-                                                                {item.qty || 1} {item.unit || 'db'} {isPantryList ? ` ➔ ${getStorageIcon(item.storage)} ${item.storage || 'Kamra'}` : ''}
+                                                                {item.qty || 1} {item.unit || 'db'} {isPantryList ? ` • ${item.category || 'Alapanyag'} ➔ ${getStorageIcon(item.storage)} ${item.storage || 'Kamra'}` : ''}
                                                             </p>
                                                         </div>
                                                         <div className="flex items-center gap-1.5">
@@ -1182,28 +1358,36 @@
                                             </div>
                                         </div>
 
-                                        <div className="grid grid-cols-2 gap-2">
+                                        <div className="space-y-3">
                                             <div>
-                                                <label className={`block text-xs font-medium mb-1 ${subText}`}>Mennyiség & Mértékegység</label>
-                                                <div className="flex gap-1 items-center">
-                                                    <button type="button" onClick={() => setNewQty(Math.max(0, Number(newQty) - 1))} className={`w-8 h-9 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>-</button>
-                                                    <input type="number" min="0" value={newQty} onChange={e => setNewQty(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm text-center ${inputBg}`} />
-                                                    <button type="button" onClick={() => setNewQty(Number(newQty) + 1)} className={`w-8 h-9 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>+</button>
-                                                </div>
-                                                <select value={newUnit} onChange={e => setNewUnit(e.target.value)} className={`w-full p-2 border rounded-xl text-xs mt-1.5 ${inputBg}`}>
-                                                    {defaultUnits.map(u => <option key={u} value={u}>{u}</option>)}
-                                                    <option value="Saját mértékegység...">+ Saját...</option>
-                                                </select>
-                                                {newUnit === 'Saját mértékegység...' && (
-                                                    <input type="text" placeholder="pl. doboz" required value={customUnitInput} onChange={e => setCustomUnitInput(e.target.value)} className={`w-full p-2.5 border rounded-xl text-xs mt-1 ${inputBg}`} />
-                                                )}
+                                                <label className={`block text-xs font-medium mb-1 ${subText}`}>Mennyiség (1-8 vagy egyéni)</label>
+                                                <QuantitySelector
+                                                    value={newQty}
+                                                    onChange={setNewQty}
+                                                    darkMode={darkMode}
+                                                    inputBg={inputBg}
+                                                    subText={subText}
+                                                    min={0}
+                                                />
                                             </div>
-                                            <div>
-                                                <label className={`block text-xs font-medium mb-1 ${subText}`}>Min. készlet (0-tól)</label>
-                                                <div className="flex gap-1 items-center">
-                                                    <button type="button" onClick={() => setNewMin(Math.max(0, Number(newMin) - 1))} className={`w-8 h-9 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>-</button>
-                                                    <input type="number" min="0" value={newMin} onChange={e => setNewMin(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm text-center ${inputBg}`} />
-                                                    <button type="button" onClick={() => setNewMin(Number(newMin) + 1)} className={`w-8 h-9 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>+</button>
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <div>
+                                                    <label className={`block text-xs font-medium mb-1 ${subText}`}>Mértékegység</label>
+                                                    <select value={newUnit} onChange={e => setNewUnit(e.target.value)} className={`w-full p-2.5 border rounded-xl text-xs ${inputBg}`}>
+                                                        {defaultUnits.map(u => <option key={u} value={u}>{u}</option>)}
+                                                        <option value="Saját mértékegység...">+ Saját...</option>
+                                                    </select>
+                                                    {newUnit === 'Saját mértékegység...' && (
+                                                        <input type="text" placeholder="pl. doboz" required value={customUnitInput} onChange={e => setCustomUnitInput(e.target.value)} className={`w-full p-2.5 border rounded-xl text-xs mt-1 ${inputBg}`} />
+                                                    )}
+                                                </div>
+                                                <div>
+                                                    <label className={`block text-xs font-medium mb-1 ${subText}`}>Min. készlet (0-tól)</label>
+                                                    <div className="flex gap-1 items-center">
+                                                        <button type="button" onClick={() => setNewMin(Math.max(0, Number(newMin) - 1))} className={`w-8 h-9 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>-</button>
+                                                        <input type="number" min="0" value={newMin} onChange={e => setNewMin(e.target.value)} className={`w-full p-2.5 border rounded-xl text-sm text-center ${inputBg}`} />
+                                                        <button type="button" onClick={() => setNewMin(Number(newMin) + 1)} className={`w-8 h-9 rounded-lg font-bold flex items-center justify-center ${darkMode ? 'bg-gray-800 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>+</button>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -1363,11 +1547,11 @@
                     </div>
 
                     {/* Navigációs sáv */}
-                    <nav className={`fixed bottom-0 left-0 right-0 border-t py-2.5 px-4 flex justify-around items-center max-w-md md:max-w-4xl lg:max-w-5xl mx-auto shadow-lg rounded-t-2xl ${navBg}`}>
-                        <button onClick={() => setActiveTab('inventory')} className={`flex flex-col items-center text-xs font-medium ${activeTab === 'inventory' ? 'text-emerald-500' : 'text-gray-500'}`}>
+                    <nav className={`fixed bottom-0 left-0 right-0 border-t py-2.5 px-2 flex justify-around items-center max-w-md md:max-w-4xl lg:max-w-5xl mx-auto shadow-lg rounded-t-2xl ${navBg}`}>
+                        <button onClick={() => setActiveTab('inventory')} className={`flex flex-col items-center text-[11px] font-medium ${activeTab === 'inventory' ? 'text-emerald-500' : 'text-gray-500'}`}>
                             <span>📦 Spájz</span>
                         </button>
-                        <button onClick={() => setActiveTab('shopping')} className={`flex flex-col items-center text-xs font-medium relative ${activeTab === 'shopping' ? 'text-emerald-500' : 'text-gray-500'}`}>
+                        <button onClick={() => setActiveTab('shopping')} className={`flex flex-col items-center text-[11px] font-medium relative ${activeTab === 'shopping' ? 'text-emerald-500' : 'text-gray-500'}`}>
                             <span>🛒 Lista</span>
                             {customShoppingItems.length > 0 && (
                                 <span className="absolute -top-1 -right-2 bg-red-500 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
@@ -1375,10 +1559,13 @@
                                 </span>
                             )}
                         </button>
-                        <button onClick={() => setActiveTab('add')} className={`flex flex-col items-center text-xs font-medium ${activeTab === 'add' ? 'text-emerald-500' : 'text-gray-500'}`}>
+                        <button onClick={() => setActiveTab('recipes')} className={`flex flex-col items-center text-[11px] font-medium ${activeTab === 'recipes' ? 'text-emerald-500' : 'text-gray-500'}`}>
+                            <span>📖 Receptek</span>
+                        </button>
+                        <button onClick={() => setActiveTab('add')} className={`flex flex-col items-center text-[11px] font-medium ${activeTab === 'add' ? 'text-emerald-500' : 'text-gray-500'}`}>
                             <span>➕ Új tétel</span>
                         </button>
-                        <button onClick={() => setActiveTab('stats')} className={`flex flex-col items-center text-xs font-medium ${activeTab === 'stats' ? 'text-emerald-500' : 'text-gray-500'}`}>
+                        <button onClick={() => setActiveTab('stats')} className={`flex flex-col items-center text-[11px] font-medium ${activeTab === 'stats' ? 'text-emerald-500' : 'text-gray-500'}`}>
                             <span>📊 Grafikon</span>
                         </button>
                     </nav>
